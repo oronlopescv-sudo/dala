@@ -2,7 +2,7 @@ import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
 import { Server as SocketIOServer } from 'socket.io';
-import prisma from './src/lib/db';
+import prisma from './src/lib/db.ts';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
