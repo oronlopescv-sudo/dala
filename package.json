@@ -1,11 +1,12 @@
 {
-  "name": "tmp-app",
+  "name": "dafala",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "NEXT_TELEMETRY_DISABLED=1 tsx server.ts",
-    "build": "next build",
-    "start": "NODE_ENV=production npx prisma db push && tsx server.ts",
+    "build": "prisma generate && next build",
+    "start": "NODE_ENV=production npx prisma db push --accept-data-loss && tsx server.ts",
+    "postinstall": "prisma generate",
     "lint": "eslint"
   },
   "dependencies": {
@@ -14,11 +15,13 @@
     "lucide-react": "^1.23.0",
     "next": "16.2.10",
     "pg": "^8.11.3",
+    "prisma": "^5.10.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "tsx": "^4.7.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -26,10 +29,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "prisma": "^5.10.2",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
-    "tsx": "^4.7.1",
     "@types/pg": "^8.11.0",
     "typescript": "^5"
   }
