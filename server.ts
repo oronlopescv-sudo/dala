@@ -13,13 +13,10 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
-  // Test Prisma Connection
-  try {
-    await prisma.$connect();
-    console.log('> Successfully connected to Postgres via Prisma');
-  } catch (err) {
-    console.error('> Failed to connect to Postgres', err);
-  }
+  // Test Prisma Connection without blocking
+  prisma.$connect()
+    .then(() => console.log('> Successfully connected to Postgres via Prisma'))
+    .catch((err) => console.error('> Failed to connect to Postgres (expected if running locally without DB tunnel):', err.message));
 
   const httpServer = createServer(async (req, res) => {
     try {
