@@ -15,11 +15,11 @@ Aja como um Designer e Engenheiro Mobile Senior especialista em Next.js, WebSock
    - Altura total dinâmica (`h-[100dvh]`) para evitar problemas de barra de navegação do navegador móvel.
    - Desabilitar scroll padrão (`overflow-hidden`) e impedir zoom de pinça no toque.
    - Prevenir o efeito de rebote (bounce scroll) comum no iOS Safari.
-2. **Interface de Toque:**
+2. **Interface de Toque:** 
    - Botão PTT gigante, centralizado, fácil de pressionar com o polegar.
    - Eventos `onTouchStart` e `onTouchEnd` otimizados com `preventDefault()` para evitar atraso de 300ms de clique no celular.
    - Vibração tátil no celular via `navigator.vibrate` quando o botão PTT for pressionado ou liberado.
-3. **Desbloqueio de Áudio:**
+3. **Desbloqueio de Áudio:** 
    - Implementar fluxo para desbloquear o `AudioContext` do navegador no primeiro toque (obrigatório para iOS Safari reproduzir som sem interação direta prévia).
    - Gerenciar foco do app: pausar/retomar gravação se o usuário receber uma ligação telefônica ou minimizar o app.
 
