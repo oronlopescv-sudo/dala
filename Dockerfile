@@ -23,5 +23,5 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# Ao arrancar: aplica o schema à BD e sobe o servidor Next + Socket.io
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx tsx server.ts"]
+# Ao arrancar: tenta aplicar o schema à BD (não bloqueia se falhar) e sobe o servidor
+CMD ["sh", "-c", "echo '>> prisma db push...'; npx prisma db push --accept-data-loss || echo '>> AVISO: prisma db push falhou, a continuar mesmo assim'; echo '>> a iniciar servidor'; npx tsx server.ts"]
