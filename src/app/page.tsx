@@ -1,51 +1,70 @@
-import React, { useEffect, useState } from 'react';
-import WalkieTalkieApp from '@/components/WalkieTalkieApp';
-import { Channel } from '@prisma/client';
+'use client';
+
+import { useEffect, useState } from 'react';
+import Onboarding from '@/components/Onboarding';
+import ChannelList, { type ChannelDTO } from '@/components/ChannelList';
+import ChannelRoom from '@/components/ChannelRoom';
+import Profile from '@/components/Profile';
+import { getIdentity, type Identity } from '@/lib/identity';
+
+type View = 'list' | 'room' | 'profile';
 
 export default function Home() {
-  const [selectedChannel, setSelectedChannel] = useState<string>('');
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [identity, setIdentity] = useState<Identity | null>(null);
+  const [view, setView] = useState<View>('list');
+  const [channel, setChannel] = useState<ChannelDTO | null>(null);
 
   useEffect(() => {
-    const fetchChannels = async () => {
-      try {
-        const res = await fetch('/api/channels');
-        if (!res.ok) throw new Error('Failed to load channels');
-        const data = await res.json();
-        setChannels(data);
-        if (data.length > 0) setSelectedChannel(data[0].name);
-      } catch (e: any) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchChannels();
+    setIdentity(getIdentity());
+    setReady(true);
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center h-screen">Carregando canais…</div>;
-  if (error) return <div className="text-red-500 p-4">{error}</div>;
+  if (!ready) {
+    return (
+      <div className="flex items-center justify-center flex-1 text-emerald-400">Carregando…</div>
+    );
+  }
+
+  if (!identity) {
+    return <Onboarding onDone={(i) => setIdentity(i)} />;
+  }
+
+  if (view === 'profile') {
+    return (
+      <Profile
+        identity={identity}
+        onBack={() => setView('list')}
+        onUpdate={setIdentity}
+        onLogout={() => {
+          setIdentity(null);
+          setView('list');
+        }}
+      />
+    );
+  }
+
+  if (view === 'room' && channel) {
+    return (
+      <ChannelRoom
+        channel={channel}
+        identity={identity}
+        onLeave={() => {
+          setChannel(null);
+          setView('list');
+        }}
+      />
+    );
+  }
 
   return (
-    <div className="flex flex-col items-center p-6">
-      <h1 className="text-2xl font-bold mb-4 text-emerald-50">Selecione um Canal</h1>
-      <ul className="flex flex-wrap gap-4 mb-6">
-        {channels.map((ch) => (
-          <li key={ch.id}>
-            <button
-              className={`px-4 py-2 rounded-lg transition ${selectedChannel === ch.name ? 'bg-amber-400 text-emerald-950' : 'bg-emerald-800 text-emerald-200'}`}
-              onClick={() => setSelectedChannel(ch.name)}
-            >
-              {ch.name}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {selectedChannel && (
-        <WalkieTalkieApp channelName={selectedChannel} />
-      )}
-    </div>
+    <ChannelList
+      identity={identity}
+      onOpenChannel={(c) => {
+        setChannel(c);
+        setView('room');
+      }}
+      onOpenProfile={() => setView('profile')}
+    />
   );
 }

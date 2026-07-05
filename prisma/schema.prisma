@@ -13,12 +13,65 @@ enum ChannelType {
   THEME
 }
 
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  photoUrl  String?
+  bio       String?
+  country   String?
+  language  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdChannels Channel[]    @relation("ChannelCreator")
+  messages        Message[]
+  friendsInitiated Friendship[] @relation("FriendA")
+  friendsReceived  Friendship[] @relation("FriendB")
+}
+
 model Channel {
-  id        Int        @id @default(autoincrement())
-  name      String     @unique
-  type      ChannelType @default(PUBLIC)
-  createdAt DateTime   @default(now())
-  VoiceLog  VoiceLog[]
+  id          Int         @id @default(autoincrement())
+  name        String      @unique
+  description String?
+  type        ChannelType @default(PUBLIC)
+  createdAt   DateTime    @default(now())
+
+  creatorId String?
+  creator   User?   @relation("ChannelCreator", fields: [creatorId], references: [id])
+
+  VoiceLog VoiceLog[]
+  messages Message[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+
+  channelId Int
+  channel   Channel @relation(fields: [channelId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model Friendship {
+  id        String       @id @default(cuid())
+  status    FriendStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+
+  aId String
+  a   User   @relation("FriendA", fields: [aId], references: [id])
+  bId String
+  b   User   @relation("FriendB", fields: [bId], references: [id])
+
+  @@unique([aId, bId])
 }
 
 model VoiceLog {
