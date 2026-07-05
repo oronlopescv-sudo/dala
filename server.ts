@@ -12,6 +12,7 @@ const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
+console.log('> Starting Next.js compilation... (this may take a minute or two on the first run)');
 app.prepare().then(async () => {
   // Test Prisma Connection without blocking
   prisma.$connect()
