@@ -91,7 +91,14 @@ export default function ChannelRoom({
     if (!ctx) return;
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(ctx.destination);
+
+    // Ducking: enquanto EU estou a falar, baixa o volume dos outros
+    // (reduz feedback em viva voz: o meu mic capta menos do som que sai)
+    const gain = ctx.createGain();
+    gain.gain.value = isSpeakingRef.current ? 0.35 : 1.0;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+
     const now = ctx.currentTime;
     if (nextStartTimeRef.current < now) nextStartTimeRef.current = now;
     source.start(nextStartTimeRef.current);
@@ -113,7 +120,13 @@ export default function ChannelRoom({
         if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
       }
       try {
-        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true, // Cancela o eco (o mic não capta o som da coluna)
+            noiseSuppression: true, // Remove ruído de fundo
+            autoGainControl: true, // Normaliza o volume da voz
+          },
+        });
       } catch {
         // Sem microfone ainda pode usar o chat de texto
       }
