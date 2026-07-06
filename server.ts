@@ -20,7 +20,6 @@ interface Member {
   photoUrl: string | null;
 }
 
-const MAX_MEMBERS_PER_CHANNEL = 20;
 
 const THEME_CHANNELS = [
   { name: 'Konversa Livre', description: 'Papo aberto — entra e fala' },
@@ -124,14 +123,6 @@ app.prepare().then(async () => {
         if (!channel) channel = await prisma.channel.create({ data: { name: channelName } });
 
         const channelIdStr = channel.id.toString();
-
-        // Canal cheio?
-        const current = channelMembers.get(channelIdStr);
-        if (current && current.size >= MAX_MEMBERS_PER_CHANNEL) {
-          socket.emit('channel_full', { message: 'Este canal está cheio (máx. 20). Tenta outro!' });
-          return;
-        }
-
         socket.data.channelId = channel.id;
         socket.data.channelIdStr = channelIdStr;
         socket.join(channelIdStr);
