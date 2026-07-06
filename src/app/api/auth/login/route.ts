@@ -29,6 +29,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Banido permanentemente
+    if (user.banned) {
+      return NextResponse.json(
+        { error: 'Esta conta foi banida permanentemente' },
+        { status: 403 }
+      );
+    }
+
     // Verificar password
     const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -40,9 +48,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Gerar JWT
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
     return NextResponse.json(
       {
@@ -52,6 +62,7 @@ export async function POST(req: NextRequest) {
           id: user.id,
           email: user.email,
           username: user.username,
+          role: user.role,
           photoUrl: user.photoUrl,
           bio: user.bio,
           country: user.country,

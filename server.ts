@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import next from 'next';
 import { Server as SocketIOServer } from 'socket.io';
 import prisma from './src/lib/db';
+import { ensureAdmin } from './scripts/create-admin';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
@@ -23,7 +24,10 @@ console.log('> Starting Next.js compilation... (this may take a minute or two on
 app.prepare().then(async () => {
   prisma
     .$connect()
-    .then(() => console.log('> Successfully connected to Postgres via Prisma'))
+    .then(async () => {
+      console.log('> Successfully connected to Postgres via Prisma');
+      await ensureAdmin().catch((err) => console.error('> Admin seed failed:', err.message));
+    })
     .catch((err) =>
       console.error('> Failed to connect to Postgres (expected locally without DB tunnel):', err.message)
     );
@@ -72,6 +76,16 @@ app.prepare().then(async () => {
       socket.data.photoUrl = photoUrl ?? null;
 
       try {
+        // Banidos não entram
+        if (userId) {
+          const user = await prisma.user.findUnique({ where: { id: userId } });
+          if (user?.banned) {
+            socket.emit('banned', { message: 'Esta conta foi banida permanentemente' });
+            socket.disconnect(true);
+            return;
+          }
+        }
+
         let channel = await prisma.channel.findUnique({ where: { name: channelName } });
         if (!channel) channel = await prisma.channel.create({ data: { name: channelName } });
 
