@@ -6,6 +6,8 @@ import { Mic, MicOff, Users, ArrowLeft, Send, Smile, Radio } from 'lucide-react'
 import { cn } from '@/lib/cn';
 import { REACTION_EMOJIS } from '@/lib/constants';
 import { registerServiceWorker, requestNotificationPermission, notifySpeaker } from '@/lib/pwa';
+import { playPttStart, playPttEnd, playIncoming } from '@/lib/sounds';
+import { getToken } from '@/lib/identity';
 import type { Identity } from '@/lib/identity';
 import type { ChannelDTO } from '@/components/ChannelList';
 import Avatar from '@/components/Avatar';
@@ -51,6 +53,8 @@ export default function ChannelRoom({
   const [draft, setDraft] = useState('');
   const [showMembers, setShowMembers] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
 
   const socketRef = useRef<Socket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -59,6 +63,19 @@ export default function ChannelRoom({
   const nextStartTimeRef = useRef(0);
   const isSpeakingRef = useRef(false);
   const handsFreeRef = useRef(false);
+  const mutedIdsRef = useRef<Set<string>>(new Set());
+  const membersRef = useRef<Member[]>([]);
+  const currentSpeakersRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    mutedIdsRef.current = mutedIds;
+  }, [mutedIds]);
+  useEffect(() => {
+    membersRef.current = members;
+  }, [members]);
+  useEffect(() => {
+    currentSpeakersRef.current = currentSpeakers;
+  }, [currentSpeakers]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Carrega histórico de chat
@@ -156,8 +173,14 @@ export default function ChannelRoom({
         setCurrentSpeakers((prev) => new Map(prev).set(s.userId, s.userName));
         // Notifica em background se não sou eu a falar
         if (s.userName !== identity.username) {
+          playIncoming();
           notifySpeaker(s.userName, channel.name);
         }
+      });
+
+      socket.on('channel_full', ({ message }: { message: string }) => {
+        alert(message);
+        onLeave();
       });
       socket.on('speaker_ended', ({ userId }: { userId: string }) =>
         setCurrentSpeakers((prev) => {
@@ -176,8 +199,16 @@ export default function ChannelRoom({
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       });
 
-      socket.on('audio_data', async ({ audioChunk }: { audioChunk: ArrayBuffer }) => {
+      socket.on('audio_data', async ({ userId, audioChunk }: { userId: string; audioChunk: ArrayBuffer }) => {
         if (!audioContextRef.current) return;
+        // Não toca áudio de quem eu silenciei
+        const speakerName = currentSpeakersRef.current.get(userId);
+        if (speakerName) {
+          const mutedMember = membersRef.current.find(
+            (m) => m.userName === speakerName && m.userId && mutedIdsRef.current.has(m.userId)
+          );
+          if (mutedMember) return;
+        }
         try {
           const buf = await audioContextRef.current.decodeAudioData(audioChunk.slice(0));
           playAudioBuffer(buf);
@@ -222,6 +253,7 @@ export default function ChannelRoom({
     if (handsFreeRef.current) return; // Em mãos livres o botão grande não faz PTT
     if (navigator.vibrate) navigator.vibrate(50);
     if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
+    playPttStart();
     socketRef.current?.emit('request_speak');
   };
 
@@ -233,6 +265,7 @@ export default function ChannelRoom({
       isSpeakingRef.current = false;
       setIsSpeaking(false);
       stopRecording();
+      playPttEnd();
       socketRef.current?.emit('release_speak');
     }
   };
@@ -269,6 +302,73 @@ export default function ChannelRoom({
   const sendReaction = (emoji: string) => {
     socketRef.current?.emit('send_reaction', { emoji });
     setEmojiOpen(false);
+  };
+
+  // Carrega lista de quem eu mutei
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    fetch('/api/users/mute', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : { muted: [] }))
+      .then((data: { muted: { id: string }[] }) =>
+        setMutedIds(new Set(data.muted.map((u) => u.id)))
+      )
+      .catch(() => {});
+  }, []);
+
+  const toggleMute = async (member: Member) => {
+    if (!member.userId) return;
+    const token = getToken();
+    if (!token) return alert('Faz login para silenciar pessoas');
+    try {
+      const res = await fetch('/api/users/mute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mutedId: member.userId }),
+      });
+      if (res.ok) {
+        setMutedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(member.userId!)) next.delete(member.userId!);
+          else next.add(member.userId!);
+          return next;
+        });
+      }
+    } catch {
+      /* ignora */
+    }
+  };
+
+  const reportMember = async (member: Member) => {
+    if (!member.userId) return;
+    const token = getToken();
+    if (!token) return alert('Faz login para denunciar');
+    const reason = prompt(`Porque queres denunciar ${member.userName}?`);
+    if (!reason?.trim()) return;
+    try {
+      const res = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reportedId: member.userId, reportedName: member.userName, reason }),
+      });
+      if (res.ok) alert('Denúncia enviada. Obrigado!');
+    } catch {
+      /* ignora */
+    }
+  };
+
+  const addFriend = async (member: Member) => {
+    if (!member.userId) return;
+    try {
+      const res = await fetch('/api/friends', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aId: identity.id, bId: member.userId }),
+      });
+      if (res.ok) alert(`Pedido de amizade enviado a ${member.userName}!`);
+    } catch {
+      /* ignora */
+    }
   };
 
   const otherSpeakers = Array.from(currentSpeakers.entries())
@@ -503,24 +603,32 @@ export default function ChannelRoom({
             <div className="flex flex-col gap-3">
               {members.map((m) => {
                 const speaking = Array.from(currentSpeakers.values()).includes(m.userName);
+                const isMe = m.userName === identity.username;
+                const isMuted = m.userId ? mutedIds.has(m.userId) : false;
                 return (
-                  <div key={m.socketId} className="flex items-center gap-3">
+                  <button
+                    key={m.socketId}
+                    onClick={() => !isMe && setSelectedMember(m)}
+                    className="flex items-center gap-3 text-left w-full"
+                  >
                     <Avatar
                       name={m.userName}
                       photoUrl={m.photoUrl}
                       size={38}
                       speaking={speaking}
                     />
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-50">
+                    <div className="flex-1">
+                      <p className={cn('text-sm font-semibold', isMuted ? 'text-emerald-600 line-through' : 'text-emerald-50')}>
                         {m.userName}
-                        {m.userName === identity.username && ' (tu)'}
+                        {isMe && ' (tu)'}
                       </p>
-                      {speaking && (
+                      {speaking && !isMuted && (
                         <p className="text-xs text-lime-400">a falar…</p>
                       )}
+                      {isMuted && <p className="text-xs text-emerald-600">silenciado</p>}
                     </div>
-                  </div>
+                    {!isMe && <MicOff className={cn('w-4 h-4', isMuted ? 'text-red-400' : 'text-emerald-700')} />}
+                  </button>
                 );
               })}
               {members.length === 0 && (
@@ -529,6 +637,55 @@ export default function ChannelRoom({
                   <p className="text-sm font-semibold text-emerald-50">{identity.username} (tu)</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de membro: perfil mini + ações */}
+      {selectedMember && (
+        <div
+          className="absolute inset-0 z-30 flex items-end justify-center bg-black/60"
+          onClick={() => setSelectedMember(null)}
+        >
+          <div
+            className="w-full max-w-md bg-emerald-950 border-t border-emerald-800 rounded-t-3xl p-6 pb-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <Avatar name={selectedMember.userName} photoUrl={selectedMember.photoUrl} size={56} />
+              <div>
+                <p className="text-lg font-bold text-emerald-50">{selectedMember.userName}</p>
+                <p className="text-xs text-emerald-400">membro do canal</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => addFriend(selectedMember)}
+                className="w-full py-3 rounded-xl bg-amber-400 text-emerald-950 font-semibold text-sm"
+              >
+                ➕ Adicionar amigo
+              </button>
+              <button
+                onClick={() => {
+                  toggleMute(selectedMember);
+                  setSelectedMember(null);
+                }}
+                className="w-full py-3 rounded-xl bg-emerald-900/60 text-emerald-100 font-semibold text-sm border border-emerald-800"
+              >
+                {selectedMember.userId && mutedIds.has(selectedMember.userId)
+                  ? '🔊 Deixar de silenciar'
+                  : '🔇 Silenciar (não ouves/vês esta pessoa)'}
+              </button>
+              <button
+                onClick={() => {
+                  reportMember(selectedMember);
+                  setSelectedMember(null);
+                }}
+                className="w-full py-3 rounded-xl bg-red-900/40 text-red-300 font-semibold text-sm border border-red-900/50"
+              >
+                🚩 Denunciar
+              </button>
             </div>
           </div>
         </div>

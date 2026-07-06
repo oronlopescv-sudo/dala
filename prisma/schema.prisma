@@ -106,3 +106,14 @@ model Mute {
 
   @@unique([muterId, mutedId])
 }
+
+model Report {
+  id           String   @id @default(cuid())
+  reporterId   String
+  reporterName String
+  reportedId   String
+  reportedName String
+  reason       String
+  resolved     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}

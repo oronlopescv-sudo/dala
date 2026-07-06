@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Onboarding from '@/components/Onboarding';
+import Auth from '@/components/Auth';
 import ChannelList, { type ChannelDTO } from '@/components/ChannelList';
 import ChannelRoom from '@/components/ChannelRoom';
 import Profile from '@/components/Profile';
@@ -27,7 +27,7 @@ export default function Home() {
   }
 
   if (!identity) {
-    return <Onboarding onDone={(i) => setIdentity(i)} />;
+    return <Auth onDone={(i) => setIdentity(i)} />;
   }
 
   if (view === 'profile') {

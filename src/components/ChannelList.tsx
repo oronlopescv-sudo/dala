@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Plus, Hash, Lock, Music, Users, Loader2, X, Radio } from 'lucide-react';
+import { Search, Plus, Hash, Lock, Music, Loader2, X, Radio } from 'lucide-react';
 import type { Identity } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
 import { cn } from '@/lib/cn';
@@ -33,6 +33,7 @@ export default function ChannelList({
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [online, setOnline] = useState<Record<string, number>>({});
 
   const load = async () => {
     setLoading(true);
@@ -42,6 +43,27 @@ export default function ChannelList({
     } finally {
       setLoading(false);
     }
+  };
+
+  // Contagem de pessoas online por canal — refresca a cada 10s
+  useEffect(() => {
+    const fetchOnline = () =>
+      fetch('/api/online')
+        .then((r) => (r.ok ? r.json() : {}))
+        .then(setOnline)
+        .catch(() => {});
+    fetchOnline();
+    const interval = setInterval(fetchOnline, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Shuffle: entra num canal aleatório (de preferência com gente)
+  const shuffle = () => {
+    if (channels.length === 0) return;
+    const withPeople = channels.filter((c) => (online[String(c.id)] ?? 0) > 0);
+    const pool = withPeople.length > 0 ? withPeople : channels;
+    const random = pool[Math.floor(Math.random() * pool.length)];
+    onOpenChannel(random);
   };
 
   useEffect(() => {
@@ -69,9 +91,18 @@ export default function ChannelList({
           <Radio className="w-6 h-6 text-amber-400" />
           <h1 className="text-xl font-bold text-emerald-50">Da Fala</h1>
         </div>
-        <button onClick={onOpenProfile} aria-label="O meu perfil">
-          <Avatar name={identity.username} photoUrl={identity.photoUrl} size={38} />
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={shuffle}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/15 border border-amber-400/40 text-amber-400 text-xs font-bold uppercase tracking-wide active:scale-95"
+            aria-label="Canal aleatório"
+          >
+            🎲 Shuffle
+          </button>
+          <button onClick={onOpenProfile} aria-label="O meu perfil">
+            <Avatar name={identity.username} photoUrl={identity.photoUrl} size={38} />
+          </button>
+        </div>
       </header>
 
       {/* Pesquisa */}
@@ -106,7 +137,7 @@ export default function ChannelList({
                 </h2>
                 <div className="flex flex-col gap-2">
                   {popular.map((c) => (
-                    <ChannelRow key={`pop-${c.id}`} channel={c} onClick={() => onOpenChannel(c)} />
+                    <ChannelRow key={`pop-${c.id}`} channel={c} onlineCount={online[String(c.id)] ?? 0} onClick={() => onOpenChannel(c)} />
                   ))}
                 </div>
               </section>
@@ -118,7 +149,7 @@ export default function ChannelList({
               </h2>
               <div className="flex flex-col gap-2">
                 {filtered.map((c) => (
-                  <ChannelRow key={c.id} channel={c} onClick={() => onOpenChannel(c)} />
+                  <ChannelRow key={c.id} channel={c} onlineCount={online[String(c.id)] ?? 0} onClick={() => onOpenChannel(c)} />
                 ))}
                 {filtered.length === 0 && (
                   <p className="text-sm text-emerald-500 py-6 text-center">Nenhum canal encontrado.</p>
@@ -153,7 +184,15 @@ export default function ChannelList({
   );
 }
 
-function ChannelRow({ channel, onClick }: { channel: ChannelDTO; onClick: () => void }) {
+function ChannelRow({
+  channel,
+  onlineCount = 0,
+  onClick,
+}: {
+  channel: ChannelDTO;
+  onlineCount?: number;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -168,10 +207,10 @@ function ChannelRow({ channel, onClick }: { channel: ChannelDTO; onClick: () => 
           <p className="text-xs text-emerald-400 truncate">{channel.description}</p>
         )}
       </div>
-      {(channel._count?.messages ?? 0) > 0 && (
-        <span className="flex items-center gap-1 text-xs text-emerald-400">
-          <Users className="w-3 h-3" />
-          {channel._count?.messages}
+      {onlineCount > 0 && (
+        <span className="flex items-center gap-1 text-xs font-bold text-lime-400">
+          <span className="w-2 h-2 rounded-full bg-lime-500 animate-pulse" />
+          {onlineCount}
         </span>
       )}
     </button>

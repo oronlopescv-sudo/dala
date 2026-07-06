@@ -39,12 +39,4 @@ export async function ensureAdmin() {
   }
 }
 
-// Correr diretamente: npx tsx scripts/create-admin.ts
-if (require.main === module) {
-  ensureAdmin()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error(err);
-      process.exit(1);
-    });
-}
+// Nota: este módulo é importado pelo server.ts que chama ensureAdmin() no arranque.

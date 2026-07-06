@@ -20,6 +20,17 @@ interface Member {
   photoUrl: string | null;
 }
 
+const MAX_MEMBERS_PER_CHANNEL = 20;
+
+const THEME_CHANNELS = [
+  { name: 'Konversa Livre', description: 'Papo aberto — entra e fala' },
+  { name: 'Música', description: 'Funaná, morna, kizomba e mais' },
+  { name: 'Desporto', description: 'Futebol e tudo o resto' },
+  { name: 'Kriolu', description: 'Pratika bu kriolu li' },
+  { name: 'Diáspora', description: 'Kabuverdianus na mundu interu' },
+  { name: 'Só Risada', description: 'Piadas e boa disposição' },
+];
+
 console.log('> Starting Next.js compilation... (this may take a minute or two on the first run)');
 app.prepare().then(async () => {
   prisma
@@ -27,6 +38,17 @@ app.prepare().then(async () => {
     .then(async () => {
       console.log('> Successfully connected to Postgres via Prisma');
       await ensureAdmin().catch((err) => console.error('> Admin seed failed:', err.message));
+      // Seed de canais temáticos
+      for (const ch of THEME_CHANNELS) {
+        await prisma.channel
+          .upsert({
+            where: { name: ch.name },
+            create: { name: ch.name, description: ch.description, type: 'THEME' },
+            update: {},
+          })
+          .catch(() => {});
+      }
+      console.log('> Theme channels ready');
     })
     .catch((err) =>
       console.error('> Failed to connect to Postgres (expected locally without DB tunnel):', err.message)
@@ -35,6 +57,18 @@ app.prepare().then(async () => {
   const httpServer = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url!, true);
+
+      // Contagem de pessoas online por canal (para a lista de canais)
+      if (parsedUrl.pathname === '/api/online') {
+        const counts: Record<string, number> = {};
+        for (const [channelIdStr, members] of channelMembers) {
+          counts[channelIdStr] = members.size;
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(counts));
+        return;
+      }
+
       await handle(req, res, parsedUrl);
     } catch (err) {
       console.error('Error occurred handling', req.url, err);
@@ -90,6 +124,14 @@ app.prepare().then(async () => {
         if (!channel) channel = await prisma.channel.create({ data: { name: channelName } });
 
         const channelIdStr = channel.id.toString();
+
+        // Canal cheio?
+        const current = channelMembers.get(channelIdStr);
+        if (current && current.size >= MAX_MEMBERS_PER_CHANNEL) {
+          socket.emit('channel_full', { message: 'Este canal está cheio (máx. 20). Tenta outro!' });
+          return;
+        }
+
         socket.data.channelId = channel.id;
         socket.data.channelIdStr = channelIdStr;
         socket.join(channelIdStr);
