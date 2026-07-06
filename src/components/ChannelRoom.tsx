@@ -47,6 +47,7 @@ export default function ChannelRoom({
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
   const [currentSpeakers, setCurrentSpeakers] = useState<Map<string, string>>(new Map()); // userId -> userName
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [handsFree, setHandsFree] = useState(false);
   const [draft, setDraft] = useState('');
   const [showMembers, setShowMembers] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -57,6 +58,7 @@ export default function ChannelRoom({
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
   const isSpeakingRef = useRef(false);
+  const handsFreeRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Carrega histórico de chat
@@ -204,6 +206,7 @@ export default function ChannelRoom({
 
   const handlePttStart = (e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
+    if (handsFreeRef.current) return; // Em mãos livres o botão grande não faz PTT
     if (navigator.vibrate) navigator.vibrate(50);
     if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
     socketRef.current?.emit('request_speak');
@@ -211,12 +214,35 @@ export default function ChannelRoom({
 
   const handlePttEnd = (e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
+    if (handsFreeRef.current) return;
     if (isSpeakingRef.current) {
       if (navigator.vibrate) navigator.vibrate(30);
       isSpeakingRef.current = false;
       setIsSpeaking(false);
       stopRecording();
       socketRef.current?.emit('release_speak');
+    }
+  };
+
+  // Viva voz / mãos livres: toggle que mantém o mic aberto
+  const toggleHandsFree = () => {
+    if (navigator.vibrate) navigator.vibrate(50);
+    if (handsFreeRef.current) {
+      // Desligar
+      handsFreeRef.current = false;
+      setHandsFree(false);
+      if (isSpeakingRef.current) {
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+        stopRecording();
+        socketRef.current?.emit('release_speak');
+      }
+    } else {
+      // Ligar
+      handsFreeRef.current = true;
+      setHandsFree(true);
+      if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
+      socketRef.current?.emit('request_speak');
     }
   };
 
@@ -338,7 +364,8 @@ export default function ChannelRoom({
                 'relative z-10 flex items-center justify-center w-60 h-60 rounded-full shadow-2xl transition-all duration-100 select-none',
                 isSpeaking
                   ? 'bg-lime-500 scale-95'
-                  : 'bg-amber-400 active:scale-95 shadow-[0_20px_40px_rgba(0,0,0,0.3)]'
+                  : 'bg-amber-400 active:scale-95 shadow-[0_20px_40px_rgba(0,0,0,0.3)]',
+                handsFree && 'ring-4 ring-lime-400/60'
               )}
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
@@ -351,8 +378,22 @@ export default function ChannelRoom({
           </div>
 
           <p className="mt-10 text-emerald-400/60 uppercase tracking-widest text-sm">
-            Segura para falar
+            {handsFree ? 'Viva voz ligado — mic aberto' : 'Segura para falar'}
           </p>
+
+          {/* Botão viva voz (mãos livres) */}
+          <button
+            onClick={toggleHandsFree}
+            className={cn(
+              'mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-wide border transition-colors',
+              handsFree
+                ? 'bg-lime-500 text-emerald-950 border-lime-400 shadow-[0_0_20px_rgba(132,204,22,0.5)]'
+                : 'bg-emerald-900/50 text-emerald-300 border-emerald-800/50'
+            )}
+          >
+            <Radio className="w-4 h-4" />
+            {handsFree ? 'Desligar viva voz' : 'Viva voz'}
+          </button>
 
           {/* Reações rápidas */}
           <div className="flex gap-2 mt-8">
