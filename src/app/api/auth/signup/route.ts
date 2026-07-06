@@ -2,12 +2,22 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { NextRequest, NextResponse } from 'next/server';
+import { getClientIp, isIpBanned } from '@/lib/ip';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
 export async function POST(req: NextRequest) {
   try {
+    // Ban por IP: dispositivo banido não cria contas novas
+    const ip = getClientIp(req);
+    if (await isIpBanned(ip)) {
+      return NextResponse.json(
+        { error: 'Acesso bloqueado' },
+        { status: 403 }
+      );
+    }
+
     const { email, username, password } = await req.json();
 
     if (!email || !username || !password) {
@@ -40,6 +50,7 @@ export async function POST(req: NextRequest) {
         email,
         username,
         password: hashedPassword,
+        lastIp: ip,
       },
     });
 
