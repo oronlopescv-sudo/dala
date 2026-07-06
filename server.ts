@@ -158,19 +158,20 @@ app.prepare().then(async () => {
     });
 
     socket.on('release_speak', async () => {
-      const { channelId, channelIdStr, userName, speakStartTime } = socket.data;
+      const { channelId, channelIdStr, userName, userId, speakStartTime } = socket.data;
       if (!channelIdStr) return;
 
       if (channelSpeakers.get(channelIdStr) === socket.id) {
         channelSpeakers.delete(channelIdStr);
         io.to(channelIdStr).emit('speaker_ended', { userId: socket.id });
 
-        if (speakStartTime) {
+        if (speakStartTime && userId) {
           const durationMs = Date.now() - speakStartTime;
           try {
             await prisma.voiceLog.create({
-              data: { userId: socket.id, userName: userName || 'Anonymous', channelId, durationMs },
+              data: { userId, userName: userName || 'Anonymous', channelId, durationMs },
             });
+            console.log(`> Voice logged: ${userName} spoke for ${durationMs}ms in channel ${channelId}`);
           } catch (err) {
             console.error('Failed to log voice to DB', (err as Error).message);
           }
