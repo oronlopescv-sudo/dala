@@ -56,26 +56,11 @@ export async function POST(req: NextRequest) {
       data: { banned: ban, bannedAt: ban ? new Date() : null },
     });
 
-    // Ban por IP: bloqueia o dispositivo/rede do banido
-    let ipBanned = false;
-    if (ban && target.lastIp) {
-      await prisma.ipBan.upsert({
-        where: { ip: target.lastIp },
-        create: { ip: target.lastIp, reason: `ban de ${target.username}` },
-        update: {},
-      });
-      ipBanned = true;
-    }
-    if (!ban && target.lastIp) {
-      // Unban remove também o ban do IP
-      await prisma.ipBan.deleteMany({ where: { ip: target.lastIp } });
-    }
-
     return NextResponse.json({
       message: ban
-        ? `${target.username} foi banido permanentemente${ipBanned ? ' (conta + IP)' : ''}`
+        ? `${target.username} foi banido permanentemente`
         : `${target.username} foi desbanido`,
-      user: { id: target.id, username: target.username, banned: ban, ipBanned },
+      user: { id: target.id, username: target.username, banned: ban },
     });
   } catch (error) {
     console.error(error);
