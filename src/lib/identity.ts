@@ -1,8 +1,9 @@
 // Identidade do utilizador guardada localmente no dispositivo.
-// (Sem sistema de password nesta fase — o username identifica a conta.)
+// Agora com suporte a login por email + password
 
 export interface Identity {
   id: string;
+  email: string;
   username: string;
   photoUrl: string | null;
   bio: string | null;
@@ -10,26 +11,38 @@ export interface Identity {
   language: string | null;
 }
 
-const KEY = 'dafala.identity';
+const IDENTITY_KEY = 'dafala.identity';
+const TOKEN_KEY = 'dafala.token';
 
 export function getIdentity(): Identity | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(IDENTITY_KEY);
     return raw ? (JSON.parse(raw) as Identity) : null;
   } catch {
     return null;
   }
 }
 
-export function saveIdentity(identity: Identity): void {
+export function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function saveIdentity(identity: Identity, token: string): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(KEY, JSON.stringify(identity));
+  localStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
+  localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearIdentity(): void {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(KEY);
+  localStorage.removeItem(IDENTITY_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export function isLoggedIn(): boolean {
+  return getIdentity() !== null && getToken() !== null;
 }
 
 // Reduz uma imagem escolhida para um quadrado pequeno (data URL) — evita fotos gigantes.
