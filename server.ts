@@ -41,8 +41,8 @@ app.prepare().then(async () => {
 
   const io = new SocketIOServer(httpServer, { cors: { origin: '*' }, maxHttpBufferSize: 1e7 });
 
-  // Só um orador por canal (mutex de voz)
-  const channelSpeakers = new Map<string, string>(); // channelIdStr -> socketId
+  // Vários oradores em simultâneo por canal (como o Walkie Talkie social)
+  const channelSpeakers = new Map<string, Set<string>>(); // channelIdStr -> Set<socketId>
   // Presença: membros online por canal
   const channelMembers = new Map<string, Map<string, Member>>(); // channelIdStr -> socketId -> Member
 
@@ -55,8 +55,10 @@ app.prepare().then(async () => {
       members.delete(socketId);
       if (members.size === 0) channelMembers.delete(channelIdStr);
     }
-    if (channelSpeakers.get(channelIdStr) === socketId) {
-      channelSpeakers.delete(channelIdStr);
+    const speakers = channelSpeakers.get(channelIdStr);
+    if (speakers?.has(socketId)) {
+      speakers.delete(socketId);
+      if (speakers.size === 0) channelSpeakers.delete(channelIdStr);
       io.to(channelIdStr).emit('speaker_ended', { userId: socketId });
     }
   };
@@ -133,26 +135,22 @@ app.prepare().then(async () => {
       });
     });
 
-    // ---- Voz PTT ----
+    // ---- Voz PTT (vários oradores em simultâneo) ----
     socket.on('request_speak', () => {
       const { channelIdStr, userName } = socket.data;
       if (!channelIdStr) return;
 
-      const currentSpeaker = channelSpeakers.get(channelIdStr);
-      if (!currentSpeaker || currentSpeaker === socket.id) {
-        channelSpeakers.set(channelIdStr, socket.id);
-        socket.data.speakStartTime = Date.now();
-        io.to(channelIdStr).emit('speaker_started', { userId: socket.id, userName });
-        socket.emit('speak_granted');
-      } else {
-        socket.emit('speak_denied');
-      }
+      if (!channelSpeakers.has(channelIdStr)) channelSpeakers.set(channelIdStr, new Set());
+      channelSpeakers.get(channelIdStr)!.add(socket.id);
+      socket.data.speakStartTime = Date.now();
+      io.to(channelIdStr).emit('speaker_started', { userId: socket.id, userName });
+      socket.emit('speak_granted');
     });
 
     socket.on('audio_data', (audioChunk) => {
       const { channelIdStr } = socket.data;
       if (!channelIdStr) return;
-      if (channelSpeakers.get(channelIdStr) === socket.id) {
+      if (channelSpeakers.get(channelIdStr)?.has(socket.id)) {
         socket.broadcast.to(channelIdStr).emit('audio_data', { userId: socket.id, audioChunk });
       }
     });
@@ -161,8 +159,10 @@ app.prepare().then(async () => {
       const { channelId, channelIdStr, userName, userId, speakStartTime } = socket.data;
       if (!channelIdStr) return;
 
-      if (channelSpeakers.get(channelIdStr) === socket.id) {
-        channelSpeakers.delete(channelIdStr);
+      const speakers = channelSpeakers.get(channelIdStr);
+      if (speakers?.has(socket.id)) {
+        speakers.delete(socket.id);
+        if (speakers.size === 0) channelSpeakers.delete(channelIdStr);
         io.to(channelIdStr).emit('speaker_ended', { userId: socket.id });
 
         if (speakStartTime && userId) {

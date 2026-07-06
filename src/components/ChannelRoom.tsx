@@ -45,7 +45,7 @@ export default function ChannelRoom({
   const [members, setMembers] = useState<Member[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
-  const [currentSpeaker, setCurrentSpeaker] = useState<{ userId: string; userName: string } | null>(null);
+  const [currentSpeakers, setCurrentSpeakers] = useState<Map<string, string>>(new Map()); // userId -> userName
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [draft, setDraft] = useState('');
   const [showMembers, setShowMembers] = useState(false);
@@ -138,14 +138,18 @@ export default function ChannelRoom({
       );
 
       socket.on('speaker_started', (s: { userId: string; userName: string }) => {
-        setCurrentSpeaker(s);
+        setCurrentSpeakers((prev) => new Map(prev).set(s.userId, s.userName));
         // Notifica em background se não sou eu a falar
         if (s.userName !== identity.username) {
           notifySpeaker(s.userName, channel.name);
         }
       });
       socket.on('speaker_ended', ({ userId }: { userId: string }) =>
-        setCurrentSpeaker((prev) => (prev?.userId === userId ? null : prev))
+        setCurrentSpeakers((prev) => {
+          const next = new Map(prev);
+          next.delete(userId);
+          return next;
+        })
       );
       socket.on('speak_granted', () => {
         isSpeakingRef.current = true;
@@ -228,7 +232,14 @@ export default function ChannelRoom({
     setEmojiOpen(false);
   };
 
-  const isSomeoneElseSpeaking = currentSpeaker && currentSpeaker.userName !== identity.username;
+  const otherSpeakers = Array.from(currentSpeakers.entries())
+    .filter(([, name]) => name !== identity.username)
+    .map(([, name]) => name);
+  const isSomeoneElseSpeaking = otherSpeakers.length > 0;
+  const speakersLabel =
+    otherSpeakers.length === 1
+      ? `${otherSpeakers[0]} a falar…`
+      : `${otherSpeakers.length} pessoas a falar…`;
   const memberCount = members.length || 1;
 
   useEffect(() => {
@@ -249,7 +260,7 @@ export default function ChannelRoom({
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-lime-500 shadow-[0_0_8px_rgba(132,204,22,0.8)]" />
             <span className="text-xs text-emerald-300">
-              {isSomeoneElseSpeaking ? `${currentSpeaker.userName} a falar…` : 'Canal livre'}
+              {isSomeoneElseSpeaking ? speakersLabel : 'Canal livre'}
             </span>
           </div>
         </div>
@@ -306,7 +317,7 @@ export default function ChannelRoom({
             {isSpeaking
               ? 'Estás a falar…'
               : isSomeoneElseSpeaking
-                ? `${currentSpeaker.userName} a falar…`
+                ? speakersLabel
                 : 'Canal livre'}
           </div>
 
@@ -323,13 +334,11 @@ export default function ChannelRoom({
               onMouseDown={handlePttStart}
               onMouseUp={handlePttEnd}
               onMouseLeave={handlePttEnd}
-              disabled={!!isSomeoneElseSpeaking && !isSpeaking}
               className={cn(
                 'relative z-10 flex items-center justify-center w-60 h-60 rounded-full shadow-2xl transition-all duration-100 select-none',
                 isSpeaking
                   ? 'bg-lime-500 scale-95'
-                  : 'bg-amber-400 active:scale-95 shadow-[0_20px_40px_rgba(0,0,0,0.3)]',
-                isSomeoneElseSpeaking && !isSpeaking && 'opacity-50 bg-emerald-800'
+                  : 'bg-amber-400 active:scale-95 shadow-[0_20px_40px_rgba(0,0,0,0.3)]'
               )}
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
@@ -342,7 +351,7 @@ export default function ChannelRoom({
           </div>
 
           <p className="mt-10 text-emerald-400/60 uppercase tracking-widest text-sm">
-            {isSomeoneElseSpeaking ? 'Aguarda a tua vez' : 'Segura para falar'}
+            Segura para falar
           </p>
 
           {/* Reações rápidas */}
@@ -438,25 +447,28 @@ export default function ChannelRoom({
               Membros ({memberCount})
             </h3>
             <div className="flex flex-col gap-3">
-              {members.map((m) => (
-                <div key={m.socketId} className="flex items-center gap-3">
-                  <Avatar
-                    name={m.userName}
-                    photoUrl={m.photoUrl}
-                    size={38}
-                    speaking={currentSpeaker?.userName === m.userName}
-                  />
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-50">
-                      {m.userName}
-                      {m.userName === identity.username && ' (tu)'}
-                    </p>
-                    {currentSpeaker?.userName === m.userName && (
-                      <p className="text-xs text-lime-400">a falar…</p>
-                    )}
+              {members.map((m) => {
+                const speaking = Array.from(currentSpeakers.values()).includes(m.userName);
+                return (
+                  <div key={m.socketId} className="flex items-center gap-3">
+                    <Avatar
+                      name={m.userName}
+                      photoUrl={m.photoUrl}
+                      size={38}
+                      speaking={speaking}
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-50">
+                        {m.userName}
+                        {m.userName === identity.username && ' (tu)'}
+                      </p>
+                      {speaking && (
+                        <p className="text-xs text-lime-400">a falar…</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {members.length === 0 && (
                 <div className="flex items-center gap-3">
                   <Avatar name={identity.username} photoUrl={identity.photoUrl} size={38} />
