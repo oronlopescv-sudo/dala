@@ -14,7 +14,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Da Fala",
-  description: "Walkie-Talkie App Mobile-only",
+  description: "Walkie-Talkie social de Cabo Verde",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Da Fala",
+  },
 };
 
 export const viewport: Viewport = {
@@ -22,6 +28,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#022c22",
 };
 
 export default function RootLayout({

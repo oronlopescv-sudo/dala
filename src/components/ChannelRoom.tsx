@@ -5,6 +5,7 @@ import io, { Socket } from 'socket.io-client';
 import { Mic, MicOff, Users, ArrowLeft, Send, Smile, Radio } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { REACTION_EMOJIS } from '@/lib/constants';
+import { registerServiceWorker, requestNotificationPermission, notifySpeaker } from '@/lib/pwa';
 import type { Identity } from '@/lib/identity';
 import type { ChannelDTO } from '@/components/ChannelList';
 import Avatar from '@/components/Avatar';
@@ -100,6 +101,10 @@ export default function ChannelRoom({
     let cancelled = false;
 
     const connect = async () => {
+      // PWA: service worker + permissão de notificações (para background)
+      registerServiceWorker();
+      requestNotificationPermission();
+
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioContextClass) {
         audioContextRef.current = new AudioContextClass();
@@ -132,7 +137,13 @@ export default function ChannelRoom({
         setMembers((prev) => prev.filter((x) => x.socketId !== socketId))
       );
 
-      socket.on('speaker_started', (s: { userId: string; userName: string }) => setCurrentSpeaker(s));
+      socket.on('speaker_started', (s: { userId: string; userName: string }) => {
+        setCurrentSpeaker(s);
+        // Notifica em background se não sou eu a falar
+        if (s.userName !== identity.username) {
+          notifySpeaker(s.userName, channel.name);
+        }
+      });
       socket.on('speaker_ended', ({ userId }: { userId: string }) =>
         setCurrentSpeaker((prev) => (prev?.userId === userId ? null : prev))
       );
