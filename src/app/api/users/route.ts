@@ -53,7 +53,14 @@ export async function POST(req: Request) {
     const user = await prisma.user.upsert({
       where: { username },
       update: data,
-      create: { username, ...data },
+      // Perfil legado (sistema antigo sem auth): email/password de reserva.
+      // Password vazia nunca valida no bcrypt, por isso não permite login real.
+      create: {
+        username,
+        email: (body.email ?? `${username}@legacy.dafala.local`).toLowerCase(),
+        password: '',
+        ...data,
+      },
     });
     return NextResponse.json(user);
   } catch (error) {

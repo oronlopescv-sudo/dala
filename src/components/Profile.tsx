@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { ArrowLeft, Camera, Loader2, LogOut } from 'lucide-react';
-import { fileToAvatarDataUrl, saveIdentity, clearIdentity, type Identity } from '@/lib/identity';
+import { fileToAvatarDataUrl, saveIdentity, clearIdentity, getToken, type Identity } from '@/lib/identity';
 import { COUNTRIES, LANGUAGES, countryFlag } from '@/lib/constants';
 import Avatar from '@/components/Avatar';
 
@@ -46,7 +46,7 @@ export default function Profile({
       });
       if (res.ok) {
         const updated = (await res.json()) as Identity;
-        saveIdentity(updated);
+        saveIdentity(updated, getToken() ?? '');
         onUpdate(updated);
         setSaved(true);
       }

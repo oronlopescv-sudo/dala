@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { Radio, Camera, Loader2 } from 'lucide-react';
-import { fileToAvatarDataUrl, saveIdentity, type Identity } from '@/lib/identity';
+import { fileToAvatarDataUrl, saveIdentity, getToken, type Identity } from '@/lib/identity';
 import { COUNTRIES, LANGUAGES } from '@/lib/constants';
 import Avatar from '@/components/Avatar';
 
@@ -39,7 +39,7 @@ export default function Onboarding({ onDone }: { onDone: (identity: Identity) =>
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Falha ao criar conta');
       const user = (await res.json()) as Identity;
-      saveIdentity(user);
+      saveIdentity(user, getToken() ?? '');
       onDone(user);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro inesperado');
