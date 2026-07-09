@@ -135,29 +135,41 @@ export default function Auth({ onDone }: { onDone: (i: Identity) => void }) {
           />
 
           {mode === 'signup' && (
-            <div className="flex gap-2">
-              <select
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                className="flex-1 px-3 py-3 bg-emerald-950/60 border border-emerald-800/50 rounded-2xl text-emerald-50 text-sm focus:outline-none"
-              >
-                {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.flag} {c.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="flex-1 px-3 py-3 bg-emerald-950/60 border border-emerald-800/50 rounded-2xl text-emerald-50 text-sm focus:outline-none"
-              >
-                {LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="px-1 text-xs font-medium text-emerald-400">País</span>
+                <div className="relative">
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full appearance-none px-4 py-3 pr-10 bg-emerald-950/60 border border-emerald-800/50 rounded-2xl text-emerald-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  >
+                    {COUNTRIES.map((c) => (
+                      <option key={c.code} value={c.code} className="text-emerald-950 bg-white">
+                        {c.flag} {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 text-xs">▾</span>
+                </div>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="px-1 text-xs font-medium text-emerald-400">Língua</span>
+                <div className="relative">
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full appearance-none px-4 py-3 pr-10 bg-emerald-950/60 border border-emerald-800/50 rounded-2xl text-emerald-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  >
+                    {LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code} className="text-emerald-950 bg-white">
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 text-xs">▾</span>
+                </div>
+              </label>
             </div>
           )}
 
