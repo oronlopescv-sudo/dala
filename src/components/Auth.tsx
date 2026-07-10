@@ -135,8 +135,8 @@ export default function Auth({ onDone }: { onDone: (i: Identity) => void }) {
           />
 
           {mode === 'signup' && (
-            <div className="flex flex-col gap-3">
-              <label className="flex flex-col gap-1">
+            <div className="flex gap-3">
+              <label className="flex-1 flex flex-col gap-1">
                 <span className="px-1 text-xs font-medium text-emerald-400">País</span>
                 <div className="relative">
                   <select
@@ -153,7 +153,7 @@ export default function Auth({ onDone }: { onDone: (i: Identity) => void }) {
                   <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 text-xs">▾</span>
                 </div>
               </label>
-              <label className="flex flex-col gap-1">
+              <label className="flex-1 flex flex-col gap-1">
                 <span className="px-1 text-xs font-medium text-emerald-400">Língua</span>
                 <div className="relative">
                   <select
