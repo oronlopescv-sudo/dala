@@ -56,6 +56,15 @@ app.prepare().then(async () => {
   const httpServer = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url!, true);
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress || '';
+
+      // Rate limiting para APIs HTTP: 100 req/min por IP
+      if (isRateLimitedHttp(clientIp)) {
+        res.statusCode = 429;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Demasiados pedidos. Tenta mais tarde.' }));
+        return;
+      }
 
       // Contagem de pessoas online por canal (para a lista de canais)
       if (parsedUrl.pathname === '/api/online') {
@@ -82,6 +91,55 @@ app.prepare().then(async () => {
   const channelSpeakers = new Map<string, Set<string>>(); // channelIdStr -> Set<socketId>
   // Presença: membros online por canal
   const channelMembers = new Map<string, Map<string, Member>>(); // channelIdStr -> socketId -> Member
+
+  // ---- Rate Limiting ----
+  // Rate limit: 10 mensagens por minuto por utilizador (socket.io)
+  const userMessageTimestamps = new Map<string, number[]>();
+  const isRateLimitedMessage = (socketId: string): boolean => {
+    const now = Date.now();
+    const windowMs = 60 * 1000; // 1 minuto
+    const maxMessages = 10;
+
+    if (!userMessageTimestamps.has(socketId)) {
+      userMessageTimestamps.set(socketId, [now]);
+      return false;
+    }
+
+    const timestamps = userMessageTimestamps.get(socketId)!;
+    const recentTimestamps = timestamps.filter((t) => now - t < windowMs);
+
+    if (recentTimestamps.length >= maxMessages) {
+      return true;
+    }
+
+    recentTimestamps.push(now);
+    userMessageTimestamps.set(socketId, recentTimestamps);
+    return false;
+  };
+
+  // Rate limit: 100 requisições por minuto por IP (APIs HTTP)
+  const ipRequestTimestamps = new Map<string, number[]>();
+  const isRateLimitedHttp = (ip: string): boolean => {
+    const now = Date.now();
+    const windowMs = 60 * 1000; // 1 minuto
+    const maxRequests = 100;
+
+    if (!ipRequestTimestamps.has(ip)) {
+      ipRequestTimestamps.set(ip, [now]);
+      return false;
+    }
+
+    const timestamps = ipRequestTimestamps.get(ip)!;
+    const recentTimestamps = timestamps.filter((t) => now - t < windowMs);
+
+    if (recentTimestamps.length >= maxRequests) {
+      return true;
+    }
+
+    recentTimestamps.push(now);
+    ipRequestTimestamps.set(ip, recentTimestamps);
+    return false;
+  };
 
   const membersList = (channelIdStr: string): Member[] =>
     Array.from(channelMembers.get(channelIdStr)?.values() ?? []);
@@ -150,6 +208,15 @@ app.prepare().then(async () => {
     // ---- Chat de texto ----
     socket.on('send_message', (payload: { content: string }) => {
       const { channelId, channelIdStr, userId, userName, photoUrl } = socket.data;
+
+      // Rate limiting: 10 mensagens por minuto por utilizador
+      if (isRateLimitedMessage(socket.id)) {
+        socket.emit('rate_limited', {
+          error: 'Demasiadas mensagens. Espera um minuto antes de enviar novamente.',
+        });
+        return;
+      }
+
       const content = (payload?.content ?? '').trim();
       if (!channelIdStr || !content) return;
 
@@ -167,7 +234,14 @@ app.prepare().then(async () => {
       if (userId) {
         prisma.message
           .create({ data: { content: message.content, channelId, userId } })
-          .catch((err) => console.error('Failed to persist message:', err.message));
+          .catch((err) => {
+            console.error('Failed to persist message:', err.message);
+            // Emite evento de erro para o cliente reverter o optimistic update
+            io.to(channelIdStr).emit('message_persist_failed', {
+              messageId: message.id,
+              error: 'Falha ao guardar mensagem. Tente novamente.',
+            });
+          });
       }
     });
 
@@ -221,6 +295,10 @@ app.prepare().then(async () => {
             console.log(`> Voice logged: ${userName} spoke for ${durationMs}ms in channel ${channelId}`);
           } catch (err) {
             console.error('Failed to log voice to DB', (err as Error).message);
+            // Emite evento de erro ao cliente
+            socket.emit('voice_log_failed', {
+              error: 'Falha ao guardar registo de voz. Os dados não foram persistidos.',
+            });
           }
           socket.data.speakStartTime = null;
         }
