@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import prisma from '@/lib/db';
+import { sanitizeUser } from '@/lib/auth';
 
-// Storage simples em memória
-const users: { [key: string]: any } = {};
+function getJWTSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is not set. This is required for authentication.');
+  }
+  return secret;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,25 +38,46 @@ export async function POST(req: NextRequest) {
     }
 
     // Verificar duplicatas
-    for (const user of Object.values(users)) {
-      if (user.email === email || user.username === username) {
-        return NextResponse.json(
-          { error: 'Email ou username já existem' },
-          { status: 409 }
-        );
-      }
+    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    if (existingEmail) {
+      return NextResponse.json(
+        { error: 'Email já existe' },
+        { status: 409 }
+      );
     }
 
-    // Criar user
-    const userId = `user_${Date.now()}`;
-    users[userId] = { id: userId, email, username, password, createdAt: new Date() };
+    const existingUsername = await prisma.user.findUnique({ where: { username } });
+    if (existingUsername) {
+      return NextResponse.json(
+        { error: 'Username já existe' },
+        { status: 409 }
+      );
+    }
 
-    const token = `token_${userId}`;
+    // Hash da password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Criar user
+    const user = await prisma.user.create({
+      data: {
+        email,
+        username,
+        password: hashedPassword,
+        role: 'USER',
+      },
+    });
+
+    // Gerar JWT
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      getJWTSecret(),
+      { expiresIn: '7d' }
+    );
 
     return NextResponse.json(
       {
         message: 'Conta criada com sucesso!',
-        user: { id: userId, email, username },
+        user: sanitizeUser(user),
         token,
       },
       { status: 201 }

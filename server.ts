@@ -49,8 +49,8 @@ app.prepare().then(async () => {
       }
       console.log('> Theme channels ready');
     })
-    .catch((err) =>
-      console.error('> Failed to connect to Postgres (expected locally without DB tunnel):', err.message)
+    .catch((err: any) =>
+      console.error('> Failed to connect to Postgres (expected locally without DB tunnel):', err?.message)
     );
 
   const httpServer = createServer(async (req, res) => {

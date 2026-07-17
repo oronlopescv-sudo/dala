@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, extractToken } from '@/lib/auth';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/db';
 
 // POST /api/report — denunciar um utilizador
 // body: { reportedId, reportedName, reason }

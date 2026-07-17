@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/db';
 
 export async function getFilteredMessages(channelId: number, userId: string) {
   // Obter lista de utilizadores que este user tem mutado

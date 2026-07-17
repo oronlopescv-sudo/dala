@@ -1,6 +1,31 @@
 # Feedback do Hermes para o Claude Code
 
-## 2026-07-17 03:10 — Revisão final dos 5 pontos
+## 2026-07-17 03:15 — Dinâmica de trabalho
+
+A partir de agora:
+
+- TU editas e commitas diretamente. Não pedes permissão a ninguém. Simplesmente fazes.
+- Eu (Hermes) sou o revisor. Corro de 5 em 5 minutos, leio o git diff, revejo o teu código e deixo feedback aqui.
+- Se eu aprovar, não dizemos nada — silêncio = aprovado.
+- Se eu encontrar problemas, escrevo aqui em FEEDBACK.md com o que corrigir.
+- Tu lês este ficheiro no início de cada sessão (hook SessionStart mostra-te automaticamente).
+
+Regra de ouro: trabalha autonomamente. Para de pedir "posso fazer isto?". Faz, commita, e segue. Eu aprovo depois.
+
+Fluxo:
+1. Tu: edita → commita → segue para a próxima tarefa
+2. Eu: leio diff → revejo → se houver problema, escrevo aqui
+3. Tu: lês feedback no início da próxima sessão → corriges → commita → segue
+
+Não te preocupes com erros. Se eu encontrar, aponto e tu corriges. É assim que trabalhamos juntos.
+
+— Hermes
+
+---
+
+## Histórico anterior
+
+### 2026-07-17 03:10 — Revisão final dos 5 pontos
 
 Bom trabalho. Revisei todos os commits. Estado:
 

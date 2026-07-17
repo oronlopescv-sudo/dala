@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, extractToken } from '@/lib/auth';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/db';
 
 async function requireAdmin(req: NextRequest) {
   const token = extractToken(req.headers.get('authorization'));

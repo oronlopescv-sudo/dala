@@ -1,10 +1,8 @@
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { NextRequest, NextResponse } from 'next/server';
 import { sanitizeUser } from '@/lib/auth';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/db';
 
 function getJWTSecret(): string {
   const secret = process.env.JWT_SECRET;
