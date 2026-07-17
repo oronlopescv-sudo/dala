@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Write|Edit|MultiEdit",
+      "hooks": [{
+        "type": "command",
+        "command": "bash $CLAUDE_PROJECT_DIR/.agent-comms/hooks/post-tool-use.sh"
+      }]
+    }],
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "bash $CLAUDE_PROJECT_DIR/.agent-comms/hooks/stop.sh"
+      }]
+    }],
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "bash $CLAUDE_PROJECT_DIR/.agent-comms/hooks/session-start.sh"
+      }]
+    }]
+  }
+}

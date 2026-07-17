@@ -10,6 +10,28 @@ export interface JWTPayload {
   exp?: number;
 }
 
+export interface User {
+  id: string;
+  email?: string;
+  username?: string;
+  password?: string;
+  role?: string;
+  banned?: boolean;
+  bannedAt?: Date | null;
+  photoUrl?: string | null;
+  bio?: string | null;
+  country?: string | null;
+  language?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export function sanitizeUser(user: User): Omit<User, 'password'> {
+  if (!user) return user;
+  const { password, ...sanitized } = user;
+  return sanitized;
+}
+
 export function verifyToken(token: string): JWTPayload | null {
   try {
     const payload = jwt.verify(token, JWT_SECRET) as JWTPayload;

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
+import { sanitizeUser } from '@/lib/auth';
 
 // GET /api/users?username=xxx  -> um utilizador
 // GET /api/users?q=xxx         -> pesquisa (descoberta de pessoas)
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
 
     if (username) {
       const user = await prisma.user.findUnique({ where: { username } });
-      return NextResponse.json(user);
+      return NextResponse.json(user ? sanitizeUser(user) : null);
     }
 
     const where: Record<string, unknown> = {};
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
       take: 50,
       orderBy: { createdAt: 'desc' },
     });
-    return NextResponse.json(users);
+    return NextResponse.json(users.map(sanitizeUser));
   } catch (error) {
     console.error('GET /api/users failed', error);
     return NextResponse.json({ error: 'Falha ao carregar utilizadores' }, { status: 500 });
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
         ...data,
       },
     });
-    return NextResponse.json(user);
+    return NextResponse.json(sanitizeUser(user));
   } catch (error) {
     console.error('POST /api/users failed', error);
     return NextResponse.json({ error: 'Falha ao guardar perfil' }, { status: 500 });

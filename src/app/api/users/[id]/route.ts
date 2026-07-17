@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
+import { sanitizeUser } from '@/lib/auth';
 
 // PUT /api/users/:id -> atualiza perfil (painel do utilizador)
 export async function PUT(
@@ -19,7 +20,7 @@ export async function PUT(
         language: body.language ?? undefined,
       },
     });
-    return NextResponse.json(user);
+    return NextResponse.json(sanitizeUser(user));
   } catch (error) {
     console.error('PUT /api/users/:id failed', error);
     return NextResponse.json({ error: 'Falha ao atualizar perfil' }, { status: 500 });

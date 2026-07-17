@@ -2,9 +2,17 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeUser } from '@/lib/auth';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+
+function getJWTSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is not set. This is required for authentication.');
+  }
+  return secret;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,7 +58,7 @@ export async function POST(req: NextRequest) {
     // Gerar JWT
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: '7d' }
     );
 
@@ -58,16 +66,7 @@ export async function POST(req: NextRequest) {
       {
         message: 'Login realizado com sucesso',
         token,
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-          photoUrl: user.photoUrl,
-          bio: user.bio,
-          country: user.country,
-          language: user.language,
-        },
+        user: sanitizeUser(user),
       },
       { status: 200 }
     );
