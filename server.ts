@@ -234,8 +234,8 @@ app.prepare().then(async () => {
       if (userId) {
         prisma.message
           .create({ data: { content: message.content, channelId, userId } })
-          .catch((err) => {
-            console.error('Failed to persist message:', err.message);
+          .catch((err: unknown) => {
+            console.error('Failed to persist message:', (err as Error).message);
             // Emite evento de erro para o cliente reverter o optimistic update
             io.to(channelIdStr).emit('message_persist_failed', {
               messageId: message.id,
