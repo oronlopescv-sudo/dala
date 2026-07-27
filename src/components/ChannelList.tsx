@@ -11,6 +11,10 @@ export interface ChannelDTO {
   name: string;
   description: string | null;
   type: 'PUBLIC' | 'PRIVATE' | 'THEME';
+  mode?: 'FREE' | 'MODERATED';
+  accessCode?: string | null;
+  expiresAt?: string | null;
+  creatorId?: string | null;
   _count?: { messages: number };
 }
 
