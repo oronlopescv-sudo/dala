@@ -6,6 +6,7 @@
     "dev": "NEXT_TELEMETRY_DISABLED=1 tsx server.ts",
     "build": "prisma generate && next build",
     "start": "NODE_ENV=production sh -c 'npx prisma db push --accept-data-loss || echo db-push-failed; tsx server.ts'",
+    "cleanup:channels": "tsx scripts/cleanup-channels.ts",
     "postinstall": "prisma generate",
     "lint": "eslint"
   },

@@ -72,8 +72,54 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Já existe um canal com esse nome' }, { status: 409 });
     }
 
+    // Validar limites de criação por utilizador (exceto THEME)
+    if (body.creatorId && type !== 'THEME') {
+      const oneMonthAgo = new Date();
+      oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
+
+      // Limite: 1 canal público por mês
+      if (type === 'PUBLIC') {
+        const recentPublic = await prisma.channel.count({
+          where: {
+            creatorId: body.creatorId,
+            type: 'PUBLIC',
+            createdAt: { gte: oneMonthAgo },
+          },
+        });
+        if (recentPublic >= 1) {
+          return NextResponse.json(
+            { error: 'Máximo 1 canal público por mês. Tenta de novo a mês que vem.' },
+            { status: 429 }
+          );
+        }
+      }
+
+      // Limite: 10 canais privados (ativos ou recentes)
+      if (type === 'PRIVATE') {
+        const recentPrivate = await prisma.channel.count({
+          where: {
+            creatorId: body.creatorId,
+            type: 'PRIVATE',
+            OR: [
+              { expiresAt: null }, // sem expiração
+              { expiresAt: { gt: new Date() } }, // ainda não expirou
+            ],
+          },
+        });
+        if (recentPrivate >= 10) {
+          return NextResponse.json(
+            { error: 'Máximo 10 canais privados. Alguns vão expirar em 5 dias.' },
+            { status: 429 }
+          );
+        }
+      }
+    }
+
     // Gerar código de acesso para canais privados se solicitado
     const accessCode = body.accessCode ? Math.random().toString(36).substring(2, 8).toUpperCase() : null;
+
+    // Definir expiração para canais privados: +5 dias
+    const expiresAt = type === 'PRIVATE' ? new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) : null;
 
     const channel = await prisma.channel.create({
       data: {
@@ -82,6 +128,7 @@ export async function POST(req: Request) {
         type,
         mode,
         accessCode,
+        expiresAt,
         creatorId: body.creatorId || null,
       },
       include: { _count: { select: { messages: true } } },

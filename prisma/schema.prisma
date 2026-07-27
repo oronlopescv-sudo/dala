@@ -60,6 +60,7 @@ model Channel {
   mode        ChannelMode @default(FREE)
   accessCode  String?     // Código de acesso para canais privados (null = sem código)
   createdAt   DateTime    @default(now())
+  expiresAt   DateTime?   // Quando o canal expira (null = nunca; para privados = +5 dias)
 
   creatorId String?
   creator   User?   @relation("ChannelCreator", fields: [creatorId], references: [id])
