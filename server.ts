@@ -36,7 +36,7 @@ app.prepare().then(async () => {
     .$connect()
     .then(async () => {
       console.log('> Successfully connected to Postgres via Prisma');
-      await ensureAdmin().catch((err) => console.error('> Admin seed failed:', err.message));
+      await ensureAdmin().catch((err: unknown) => console.error('> Admin seed failed:', (err as Error).message));
       // Seed de canais temáticos
       for (const ch of THEME_CHANNELS) {
         await prisma.channel

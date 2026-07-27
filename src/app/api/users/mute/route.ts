@@ -113,7 +113,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(
       {
-        muted: mutedUsers.map((m) => m.muted),
+        muted: mutedUsers.map(
+          (m: { muted: { id: string; username: string; photoUrl: string | null; bio: string | null } }) => m.muted
+        ),
       },
       { status: 200 }
     );

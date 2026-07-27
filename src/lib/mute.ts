@@ -7,7 +7,7 @@ export async function getFilteredMessages(channelId: number, userId: string) {
     select: { mutedId: true },
   });
 
-  const mutedIds = mutedUsers.map((m) => m.mutedId);
+  const mutedIds = mutedUsers.map((m: { mutedId: string }) => m.mutedId);
 
   // Obter mensagens, mas excluindo as dos mutados
   const messages = await prisma.message.findMany({
@@ -43,7 +43,7 @@ export async function getFilteredVoiceLogs(
     select: { mutedId: true },
   });
 
-  const mutedIds = mutedUsers.map((m) => m.mutedId);
+  const mutedIds = mutedUsers.map((m: { mutedId: string }) => m.mutedId);
 
   // Obter voice logs, mas excluindo os dos mutados
   const voiceLogs = await prisma.voiceLog.findMany({

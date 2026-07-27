@@ -44,7 +44,7 @@ export async function GET(
       select: { mutedId: true },
     });
 
-    const mutedIds = mutedUsers.map((m) => m.mutedId);
+    const mutedIds = mutedUsers.map((m: { mutedId: string }) => m.mutedId);
 
     // Obter mensagens, mas excluindo as dos mutados
     const messages = await prisma.message.findMany({
