@@ -23,9 +23,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Procurar user pelo email
+    // Normalizar email: trim + lowercase
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Procurar user pelo email normalizado
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {

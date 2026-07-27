@@ -37,8 +37,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verificar duplicatas
-    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    // Normalizar email: trim + lowercase
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Verificar duplicatas com email normalizado
+    const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existingEmail) {
       return NextResponse.json(
         { error: 'Email já existe' },
@@ -57,10 +60,10 @@ export async function POST(req: NextRequest) {
     // Hash da password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Criar user
+    // Criar user com email normalizado
     const user = await prisma.user.create({
       data: {
-        email,
+        email: normalizedEmail,
         username,
         password: hashedPassword,
         role: 'USER',
