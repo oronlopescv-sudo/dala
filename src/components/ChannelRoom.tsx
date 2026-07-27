@@ -26,6 +26,11 @@ interface ChatMessage {
   user: { id: string | null; username: string; photoUrl: string | null };
 }
 
+interface AccessDeniedState {
+  needsCode: boolean;
+  enteredCode: string;
+}
+
 interface FloatingReaction {
   id: string;
   emoji: string;
@@ -55,14 +60,20 @@ export default function ChannelRoom({
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
+  const [speakerOn, setSpeakerOn] = useState(true);
+  const [accessDenied, setAccessDenied] = useState<AccessDeniedState>({ needsCode: false, enteredCode: '' });
+  const [micError, setMicError] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  // Captura PCM (streaming): source do mic + processor que empacota amostras
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextStartTimeRef = useRef(0);
   const isSpeakingRef = useRef(false);
   const handsFreeRef = useRef(false);
+  const speakerOnRef = useRef(true);
   const mutedIdsRef = useRef<Set<string>>(new Set());
   const membersRef = useRef<Member[]>([]);
   const currentSpeakersRef = useRef<Map<string, string>>(new Map());
@@ -76,6 +87,9 @@ export default function ChannelRoom({
   useEffect(() => {
     currentSpeakersRef.current = currentSpeakers;
   }, [currentSpeakers]);
+  useEffect(() => {
+    speakerOnRef.current = speakerOn;
+  }, [speakerOn]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Carrega histórico de chat
@@ -86,21 +100,58 @@ export default function ChannelRoom({
       .catch(() => {});
   }, [channel.id]);
 
+  // Captura de voz em PCM cru (streaming). Ao contrário do MediaRecorder/WebM,
+  // cada pacote PCM é reproduzível isoladamente — por isso a voz chega inteira.
   const startRecording = useCallback(() => {
-    if (!streamRef.current || !socketRef.current) return;
-    let recorder: MediaRecorder;
-    try {
-      recorder = new MediaRecorder(streamRef.current, { mimeType: 'audio/webm;codecs=opus' });
-    } catch {
-      recorder = new MediaRecorder(streamRef.current);
-    }
-    mediaRecorderRef.current = recorder;
-    recorder.ondataavailable = async (e) => {
-      if (e.data.size > 0 && socketRef.current) {
-        socketRef.current.emit('audio_data', await e.data.arrayBuffer());
-      }
+    const ctx = audioContextRef.current;
+    if (!ctx || !streamRef.current) return;
+    if (processorRef.current) return; // já a capturar
+
+    const source = ctx.createMediaStreamSource(streamRef.current);
+    // createScriptProcessor está descontinuado mas continua a ser o único caminho
+    // suportado em todo o lado. Alguns navegadores expõem-no com o nome antigo
+    // (webkit) e outros podem removê-lo — daí a verificação antes de usar.
+    const ctxCompat = ctx as AudioContext & {
+      createJavaScriptNode?: (b: number, i: number, o: number) => ScriptProcessorNode;
     };
-    recorder.start(200);
+    const createProcessor =
+      typeof ctx.createScriptProcessor === 'function'
+        ? ctx.createScriptProcessor.bind(ctx)
+        : typeof ctxCompat.createJavaScriptNode === 'function'
+          ? ctxCompat.createJavaScriptNode.bind(ctx)
+          : null;
+    if (!createProcessor) {
+      setMicError('Este navegador não suporta captura de voz. Experimenta Chrome, Safari ou Firefox atualizados.');
+      return;
+    }
+    const processor = createProcessor(4096, 1, 1);
+    const sampleRate = ctx.sampleRate;
+
+    processor.onaudioprocess = (e) => {
+      if (!isSpeakingRef.current || !socketRef.current) return;
+      const input = e.inputBuffer.getChannelData(0); // Float32 mono
+      const pcm = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        // ganho leve (voz mais audível) + clamp para não distorcer
+        const s = Math.max(-1, Math.min(1, input[i] * 1.4));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      // pacote: [Uint32 sampleRate LE][Int16 PCM...]
+      const packet = new ArrayBuffer(4 + pcm.byteLength);
+      new DataView(packet).setUint32(0, sampleRate, true);
+      new Int16Array(packet, 4).set(pcm);
+      socketRef.current.emit('audio_data', packet);
+    };
+
+    // Encaminha por um ganho 0 → destino: mantém o nó vivo sem me ouvir a mim.
+    const silent = ctx.createGain();
+    silent.gain.value = 0;
+    source.connect(processor);
+    processor.connect(silent);
+    silent.connect(ctx.destination);
+
+    sourceNodeRef.current = source;
+    processorRef.current = processor;
   }, []);
 
   const playAudioBuffer = useCallback((audioBuffer: AudioBuffer) => {
@@ -117,7 +168,11 @@ export default function ChannelRoom({
     gain.connect(ctx.destination);
 
     const now = ctx.currentTime;
-    if (nextStartTimeRef.current < now) nextStartTimeRef.current = now;
+    // Limita a latência acumulada: se a fila ficou muito à frente (jitter),
+    // salta para "agora" em vez de deixar a voz atrasar-se cada vez mais.
+    if (nextStartTimeRef.current < now || nextStartTimeRef.current > now + 0.5) {
+      nextStartTimeRef.current = now;
+    }
     source.start(nextStartTimeRef.current);
     nextStartTimeRef.current += audioBuffer.duration;
   }, []);
@@ -135,19 +190,45 @@ export default function ChannelRoom({
       if (AudioContextClass) {
         audioContextRef.current = new AudioContextClass();
         if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
+      } else {
+        setMicError('O teu navegador não suporta áudio. Podes usar o chat de texto.');
       }
-      try {
-        streamRef.current = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true, // Cancela o eco (o mic não capta o som da coluna)
-            noiseSuppression: true, // Remove ruído de fundo
-            autoGainControl: true, // Normaliza o volume da voz
-          },
-        });
-      } catch {
-        // Sem microfone ainda pode usar o chat de texto
+
+      // getUserMedia só existe em contexto seguro (https:// ou localhost).
+      // Em http:// o navegador nem expõe navigator.mediaDevices — daí o "microfone não funciona".
+      if (!window.isSecureContext) {
+        setMicError('O microfone precisa de uma ligação segura (https). Abre o site em https:// para falar.');
+      } else if (!navigator.mediaDevices?.getUserMedia) {
+        setMicError('Este navegador não permite aceder ao microfone. Experimenta Chrome, Safari ou Firefox atualizados.');
+      } else {
+        try {
+          streamRef.current = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true, // Cancela o eco (o mic não capta o som da coluna)
+              noiseSuppression: true, // Remove ruído de fundo
+              autoGainControl: true, // Normaliza o volume da voz
+              channelCount: 1, // Mono — voz não precisa de estéreo, poupa banda
+            },
+          });
+        } catch (err) {
+          // Distingue os casos para o utilizador saber o que fazer
+          const name = (err as DOMException)?.name;
+          if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+            setMicError('Permissão do microfone negada. Autoriza nas definições do navegador para falar.');
+          } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+            setMicError('Nenhum microfone encontrado neste dispositivo.');
+          } else {
+            setMicError('Não foi possível aceder ao microfone. Podes usar o chat de texto.');
+          }
+        }
       }
       if (cancelled) return;
+
+      // Se é canal privado com código, verificar antes de entrar
+      if (channel.type === 'PRIVATE' && channel.accessCode) {
+        setAccessDenied({ needsCode: true, enteredCode: '' });
+        return;
+      }
 
       const socket = io();
       socketRef.current = socket;
@@ -199,8 +280,10 @@ export default function ChannelRoom({
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       });
 
-      socket.on('audio_data', async ({ userId, audioChunk }: { userId: string; audioChunk: ArrayBuffer }) => {
-        if (!audioContextRef.current) return;
+      socket.on('audio_data', ({ userId, audioChunk }: { userId: string; audioChunk: ArrayBuffer | ArrayBufferView }) => {
+        const ctx = audioContextRef.current;
+        if (!ctx) return;
+        if (!speakerOnRef.current) return; // altifalante desligado pelo utilizador
         // Não toca áudio de quem eu silenciei
         const speakerName = currentSpeakersRef.current.get(userId);
         if (speakerName) {
@@ -210,10 +293,24 @@ export default function ChannelRoom({
           if (mutedMember) return;
         }
         try {
-          const buf = await audioContextRef.current.decodeAudioData(audioChunk.slice(0));
+          // Normaliza para ArrayBuffer (socket.io pode entregar Buffer/Uint8Array)
+          const bytes =
+            audioChunk instanceof ArrayBuffer
+              ? new Uint8Array(audioChunk)
+              : new Uint8Array(audioChunk.buffer, audioChunk.byteOffset, audioChunk.byteLength);
+          if (bytes.byteLength < 6) return;
+          const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+          const sampleRate = view.getUint32(0, true) || 48000;
+          // Int16 PCM a seguir aos 4 bytes de cabeçalho
+          const pcm = new Int16Array(bytes.buffer, bytes.byteOffset + 4, (bytes.byteLength - 4) >> 1);
+          const f32 = new Float32Array(pcm.length);
+          for (let i = 0; i < pcm.length; i++) f32[i] = pcm[i] / (pcm[i] < 0 ? 0x8000 : 0x7fff);
+          // buffer criado à taxa do emissor; o Web Audio reamostra sozinho na reprodução
+          const buf = ctx.createBuffer(1, f32.length, sampleRate);
+          buf.getChannelData(0).set(f32);
           playAudioBuffer(buf);
         } catch {
-          /* chunk não decodificável isolado — ignora */
+          /* pacote inválido — ignora */
         }
       });
 
@@ -230,7 +327,10 @@ export default function ChannelRoom({
     return () => {
       cancelled = true;
       socketRef.current?.disconnect();
-      mediaRecorderRef.current?.state !== 'inactive' && mediaRecorderRef.current?.stop();
+      processorRef.current?.disconnect();
+      sourceNodeRef.current?.disconnect();
+      processorRef.current = null;
+      sourceNodeRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       audioContextRef.current?.close().catch(() => {});
     };
@@ -243,9 +343,10 @@ export default function ChannelRoom({
   }, [messages, tab]);
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
+    processorRef.current?.disconnect();
+    sourceNodeRef.current?.disconnect();
+    processorRef.current = null;
+    sourceNodeRef.current = null;
   };
 
   const handlePttStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -387,6 +488,55 @@ export default function ChannelRoom({
     return () => document.removeEventListener('contextmenu', stop);
   }, []);
 
+  // Modal de código de acesso para canais privados
+  if (accessDenied.needsCode) {
+    return (
+      <div className="flex items-center justify-center h-full w-full bg-emerald-950/80 backdrop-blur-sm">
+        <div className="bg-emerald-900 border border-emerald-800 rounded-lg p-6 max-w-sm">
+          <h2 className="text-xl font-bold text-emerald-50 mb-2">Canal Privado 🔐</h2>
+          <p className="text-emerald-300 text-sm mb-4">Este canal requer um código de acesso</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Código de acesso"
+              value={accessDenied.enteredCode}
+              onChange={(e) => setAccessDenied({ ...accessDenied, enteredCode: e.target.value.toUpperCase() })}
+              className="flex-1 px-3 py-2 bg-emerald-800/50 border border-emerald-700 rounded text-white placeholder-emerald-500 text-center font-mono tracking-widest"
+              maxLength={6}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  if (accessDenied.enteredCode === channel.accessCode) {
+                    setAccessDenied({ needsCode: false, enteredCode: '' });
+                  } else {
+                    alert('Código inválido');
+                  }
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (accessDenied.enteredCode === channel.accessCode) {
+                  setAccessDenied({ needsCode: false, enteredCode: '' });
+                } else {
+                  alert('Código inválido');
+                }
+              }}
+              className="px-4 py-2 bg-amber-400 text-emerald-950 font-bold rounded hover:bg-amber-300 transition-colors"
+            >
+              Entrar
+            </button>
+          </div>
+          <button
+            onClick={onLeave}
+            className="mt-4 w-full px-4 py-2 bg-emerald-800/50 text-emerald-300 font-semibold rounded hover:bg-emerald-800 transition-colors"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full w-full max-w-md mx-auto relative overflow-hidden">
       {/* Cabeçalho */}
@@ -403,6 +553,26 @@ export default function ChannelRoom({
             </span>
           </div>
         </div>
+        <button
+          onClick={() => {
+            const next = !speakerOn;
+            setSpeakerOn(next);
+            // Retomar o áudio ao ligar (browsers suspendem sem gesto do utilizador)
+            if (next && audioContextRef.current?.state === 'suspended') {
+              audioContextRef.current.resume();
+            }
+          }}
+          aria-label={speakerOn ? 'Desligar altifalante' : 'Ligar altifalante'}
+          aria-pressed={speakerOn}
+          className={cn(
+            'flex items-center justify-center w-10 h-10 rounded-full border transition-colors text-lg',
+            speakerOn
+              ? 'bg-emerald-900/50 border-emerald-800/50 text-emerald-200'
+              : 'bg-red-900/40 border-red-800/60 text-red-300'
+          )}
+        >
+          {speakerOn ? '🔊' : '🔇'}
+        </button>
         <button
           onClick={() => setShowMembers(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-900/50 border border-emerald-800/50 text-emerald-300"
@@ -443,6 +613,11 @@ export default function ChannelRoom({
 
       {tab === 'voice' ? (
         <main className="flex-1 flex flex-col items-center justify-center p-6 relative">
+          {micError && (
+            <div className="mb-4 px-4 py-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-sm text-center max-w-xs">
+              🎤 {micError}
+            </div>
+          )}
           <div
             className={cn(
               'px-6 py-3 rounded-full text-sm font-bold uppercase tracking-wide border backdrop-blur-md mb-8',

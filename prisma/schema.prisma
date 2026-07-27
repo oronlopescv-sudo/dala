@@ -13,6 +13,11 @@ enum ChannelType {
   THEME
 }
 
+enum ChannelMode {
+  FREE        // Qualquer um fala quando quer
+  MODERATED   // Só fala quem o criador autoriza
+}
+
 enum FriendStatus {
   PENDING
   ACCEPTED
@@ -52,6 +57,8 @@ model Channel {
   name        String      @unique
   description String?
   type        ChannelType @default(PUBLIC)
+  mode        ChannelMode @default(FREE)
+  accessCode  String?     // Código de acesso para canais privados (null = sem código)
   createdAt   DateTime    @default(now())
 
   creatorId String?

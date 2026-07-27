@@ -33,8 +33,8 @@ export default function LoginComponent() {
       // Guardar identidade e token
       saveIdentity(data.user, data.token);
 
-      // Redirecionar para home
-      router.push('/');
+      // Redirecionar admins para painel, resto para home
+      router.push(data.user.role === 'ADMIN' ? '/admin' : '/');
     } catch (err) {
       setError('Erro de conexão');
       console.error(err);

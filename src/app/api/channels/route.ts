@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import type { ChannelType } from '@prisma/client';
+import type { ChannelType, ChannelMode } from '@prisma/client';
 
 const DEFAULT_CHANNELS: { name: string; description: string; type: ChannelType }[] = [
   { name: 'Geral', description: 'Conversa livre sobre tudo', type: 'PUBLIC' },
@@ -63,16 +63,25 @@ export async function POST(req: Request) {
       ? body.type
       : 'PUBLIC';
 
+    const mode: ChannelMode = ['FREE', 'MODERATED'].includes(body.mode)
+      ? body.mode
+      : 'FREE';
+
     const existing = await prisma.channel.findUnique({ where: { name } });
     if (existing) {
       return NextResponse.json({ error: 'Já existe um canal com esse nome' }, { status: 409 });
     }
+
+    // Gerar código de acesso para canais privados se solicitado
+    const accessCode = body.accessCode ? Math.random().toString(36).substring(2, 8).toUpperCase() : null;
 
     const channel = await prisma.channel.create({
       data: {
         name,
         description: body.description?.trim() || null,
         type,
+        mode,
+        accessCode,
         creatorId: body.creatorId || null,
       },
       include: { _count: { select: { messages: true } } },
