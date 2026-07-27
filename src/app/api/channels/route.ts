@@ -115,8 +115,11 @@ export async function POST(req: Request) {
       }
     }
 
-    // Gerar código de acesso para canais privados se solicitado
-    const accessCode = body.accessCode ? Math.random().toString(36).substring(2, 8).toUpperCase() : null;
+    // Gerar ou usar código de acesso personalizado para canais privados
+    let accessCode: string | null = null;
+    if (type === 'PRIVATE' && body.accessCode) {
+      accessCode = body.customAccessCode || Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
 
     // Definir expiração para canais privados: +5 dias
     const expiresAt = type === 'PRIVATE' ? new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) : null;

@@ -233,22 +233,58 @@ function CreateChannelModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<ChannelDTO['type']>('PUBLIC');
+  const [mode, setMode] = useState<'FREE' | 'MODERATED'>('FREE');
+  const [customCode, setCustomCode] = useState('');
+  const [useCustomCode, setUseCustomCode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
 
   const submit = async () => {
     if (!name.trim()) return;
     setLoading(true);
     setError(null);
     try {
+      // Se privado com código personalizado, validar
+      let codeToSend = null;
+      if (type === 'PRIVATE' && useCustomCode) {
+        const code = customCode.trim().toUpperCase();
+        if (!code) {
+          setError('Digite o código de acesso');
+          setLoading(false);
+          return;
+        }
+        if (code.length < 3) {
+          setError('Código deve ter pelo menos 3 caracteres');
+          setLoading(false);
+          return;
+        }
+        codeToSend = code;
+      }
+
       const res = await fetch('/api/channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), description, type, creatorId: identity.id }),
+        body: JSON.stringify({
+          name: name.trim(),
+          description,
+          type,
+          mode,
+          accessCode: codeToSend || (type === 'PRIVATE' && !useCustomCode),
+          creatorId: identity.id,
+          customAccessCode: codeToSend,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Falha ao criar canal');
-      onCreated(data);
+
+      // Se gerou código, mostrar antes de fechar
+      if (data.accessCode && !useCustomCode) {
+        setGeneratedCode(data.accessCode);
+      } else {
+        onCreated(data);
+        onClose();
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro');
     } finally {
@@ -291,7 +327,13 @@ function CreateChannelModal({
           {types.map((t) => (
             <button
               key={t.value}
-              onClick={() => setType(t.value)}
+              onClick={() => {
+                setType(t.value);
+                if (t.value !== 'PRIVATE') {
+                  setUseCustomCode(false);
+                  setCustomCode('');
+                }
+              }}
               className={cn(
                 'flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors',
                 type === t.value
@@ -302,6 +344,58 @@ function CreateChannelModal({
               {t.label}
             </button>
           ))}
+        </div>
+
+        {/* Opções para canal privado */}
+        {type === 'PRIVATE' && (
+          <div className="space-y-2 bg-emerald-800/20 p-3 rounded-lg">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useCustomCode}
+                onChange={(e) => {
+                  setUseCustomCode(e.target.checked);
+                  if (!e.target.checked) setCustomCode('');
+                }}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-emerald-300">Usar código personalizado</span>
+            </label>
+            {useCustomCode && (
+              <input
+                type="text"
+                placeholder="Digite o código (ex: MUSICA123)"
+                value={customCode}
+                onChange={(e) => setCustomCode(e.target.value.toUpperCase())}
+                maxLength={20}
+                className="w-full px-3 py-2 bg-emerald-800/50 border border-emerald-700 rounded text-white placeholder-emerald-500 text-sm font-mono"
+              />
+            )}
+            {!useCustomCode && (
+              <p className="text-xs text-emerald-400">Código aleatório será gerado automaticamente</p>
+            )}
+          </div>
+        )}
+
+        {/* Modo de microfone */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-emerald-400 uppercase">Modo de Microfone</p>
+          <div className="flex gap-2">
+            {(['FREE', 'MODERATED'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  'flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors',
+                  mode === m
+                    ? 'bg-amber-400 text-emerald-950'
+                    : 'bg-emerald-900/60 text-emerald-300 border border-emerald-800/50'
+                )}
+              >
+                {m === 'FREE' ? '🎤 Livre' : '🤐 Moderado'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && <p className="text-sm text-red-400">{error}</p>}
