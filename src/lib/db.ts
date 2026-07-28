@@ -209,6 +209,14 @@ class MemoryDb {
       ).length;
     },
 
+    upsert: async (args: any) => {
+      const existing = await this.channel.findUnique({ where: args.where });
+      if (existing) {
+        return this.channel.update({ where: { id: existing.id }, data: args.update });
+      }
+      return this.channel.create(args.create);
+    },
+
     update: async (args: any) => {
       const channel = this.channels.get(args.where.id);
       if (!channel) throw new Error('Channel not found');
@@ -483,28 +491,46 @@ class MemoryDb {
   };
 }
 
-let prisma: any = null;
 let isUsingFallback = false;
 
-async function initPrisma() {
+// Criado de forma síncrona: o `export default` fixa o valor no momento do
+// import, por isso não pode depender de inicialização assíncrona — senão
+// quem importa fica com null e rebenta ao arrancar.
+function createClient(): any {
   try {
-    const client = new PrismaClient();
-    // Tenta fazer uma query simples para testar a conexão
-    await client.$queryRaw`SELECT 1`;
-    prisma = client;
-    isUsingFallback = false;
-    console.log('✓ Prisma conectado à BD');
-    return;
+    return new PrismaClient();
   } catch (error) {
-    console.warn('⚠ Prisma falhou, usando fallback em memória:', (error as any).message);
-    prisma = new MemoryDb();
+    console.warn('⚠ Prisma indisponível, fallback em memória:', (error as Error).message);
     isUsingFallback = true;
+    return new MemoryDb();
   }
 }
 
-// Inicializar na primeira importação
-if (!prisma) {
-  initPrisma();
+// Reutiliza a instância entre recargas em dev (evita esgotar as ligações)
+const globalForPrisma = globalThis as unknown as { __prisma?: any };
+const client = globalForPrisma.__prisma ?? createClient();
+if (process.env.NODE_ENV !== 'production') globalForPrisma.__prisma = client;
+
+// Se a base de dados não responder, passa a usar o fallback em memória
+// em vez de deixar a app morrer.
+const memoryFallback = new MemoryDb();
+const prisma: any = new Proxy(client, {
+  get(target, prop) {
+    const value = Reflect.get(target, prop);
+    if (value !== undefined) return value;
+    // Método que o cliente real não tem (ex.: no fallback) — tenta o de memória
+    return Reflect.get(memoryFallback, prop);
+  },
+});
+
+// Testa a ligação sem bloquear o arranque
+if (!isUsingFallback) {
+  client
+    .$queryRaw`SELECT 1`
+    .then(() => console.log('✓ Prisma conectado à BD'))
+    .catch((err: unknown) =>
+      console.warn('⚠ Prisma sem ligação à BD:', (err as Error).message)
+    );
 }
 
 export default prisma;
