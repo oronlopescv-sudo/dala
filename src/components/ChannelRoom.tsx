@@ -49,39 +49,6 @@ interface PrivateMessage {
   createdAt: string;
 }
 
-// Opções de captação: mono e com limpeza de ruído — voz não precisa de estéreo.
-const MIC_CONSTRAINTS: MediaStreamConstraints = {
-  audio: {
-    echoCancellation: true, // o mic não capta o som da coluna
-    noiseSuppression: true, // remove ruído de fundo
-    autoGainControl: true, // normaliza o volume da voz
-    channelCount: 1,
-  },
-};
-
-// Mensagem específica por tipo de falha — o utilizador precisa de saber
-// o que fazer, não só que "não deu".
-function describeMicError(err: unknown): string {
-  const name = (err as DOMException)?.name;
-  switch (name) {
-    case 'NotAllowedError':
-    case 'PermissionDeniedError':
-      return 'Permissão do microfone negada. Autoriza no cadeado 🔒 ao lado do endereço e tenta de novo.';
-    case 'NotFoundError':
-    case 'DevicesNotFoundError':
-      return 'Nenhum microfone encontrado neste dispositivo.';
-    case 'NotReadableError':
-    case 'TrackStartError':
-      // Comum no iPhone: outra app ou separador está a usar o microfone
-      return 'O microfone está a ser usado por outra app. Fecha-a e tenta de novo.';
-    case 'OverconstrainedError':
-      return 'O microfone não suporta esta configuração. Tenta outro dispositivo.';
-    case 'SecurityError':
-      return 'O navegador bloqueou o microfone por segurança. Verifica as definições do site.';
-    default:
-      return 'Não foi possível aceder ao microfone. Podes usar o chat de texto.';
-  }
-}
 
 export default function ChannelRoom({
   channel,
@@ -115,7 +82,6 @@ export default function ChannelRoom({
   const [accessDenied, setAccessDenied] = useState<AccessDeniedState>({ needsCode: false, enteredCode: '' });
   const [codeError, setCodeError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
-  const [retryingMic, setRetryingMic] = useState(false);
 
   // Conversa privada 1-para-1 com um membro do canal
   const [privateChat, setPrivateChat] = useState<Member | null>(null);
@@ -123,24 +89,6 @@ export default function ChannelRoom({
   const [privateDraft, setPrivateDraft] = useState('');
   // socketIds de quem me mandou mensagem que ainda não li
   const [unreadPrivate, setUnreadPrivate] = useState<Set<string>>(new Set());
-
-  // Volta a pedir o microfone a partir de um clique do utilizador.
-  // O Safari em iOS exige um gesto para autorizar — o pedido automático
-  // ao entrar na sala é negado sem sequer mostrar a caixa de permissão.
-  const retryMic = async () => {
-    if (retryingMic) return;
-    setRetryingMic(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = stream;
-      setMicError(null);
-    } catch (err) {
-      setMicError(describeMicError(err));
-    } finally {
-      setRetryingMic(false);
-    }
-  };
 
   // Valida o código no servidor e liberta o acesso ao canal
   const [checkingCode, setCheckingCode] = useState(false);
@@ -310,9 +258,24 @@ export default function ChannelRoom({
         setMicError('Este navegador não permite aceder ao microfone. Experimenta Chrome, Safari ou Firefox atualizados.');
       } else {
         try {
-          streamRef.current = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+          streamRef.current = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true, // Cancela o eco (o mic não capta o som da coluna)
+              noiseSuppression: true, // Remove ruído de fundo
+              autoGainControl: true, // Normaliza o volume da voz
+              channelCount: 1, // Mono — voz não precisa de estéreo, poupa banda
+            },
+          });
         } catch (err) {
-          setMicError(describeMicError(err));
+          // Distingue os casos para o utilizador saber o que fazer
+          const name = (err as DOMException)?.name;
+          if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+            setMicError('Permissão do microfone negada. Autoriza nas definições do navegador para falar.');
+          } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+            setMicError('Nenhum microfone encontrado neste dispositivo.');
+          } else {
+            setMicError('Não foi possível aceder ao microfone. Podes usar o chat de texto.');
+          }
         }
       }
       if (cancelled) return;
@@ -756,13 +719,6 @@ export default function ChannelRoom({
           {micError && (
             <div className="mb-4 px-4 py-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-sm text-center max-w-xs">
               🎤 {micError}
-              <button
-                onClick={retryMic}
-                disabled={retryingMic}
-                className="mt-2 w-full py-2 rounded-xl bg-amber-400 text-emerald-950 font-bold text-xs uppercase disabled:opacity-50 active:scale-95"
-              >
-                {retryingMic ? 'A pedir…' : '🔄 Tentar de novo'}
-              </button>
             </div>
           )}
           <div
