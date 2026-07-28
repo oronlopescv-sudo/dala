@@ -5,7 +5,7 @@ import Auth from '@/components/Auth';
 import ChannelList, { type ChannelDTO } from '@/components/ChannelList';
 import ChannelRoom from '@/components/ChannelRoom';
 import Profile from '@/components/Profile';
-import { getIdentity, type Identity } from '@/lib/identity';
+import { getIdentity, getToken, saveIdentity, type Identity } from '@/lib/identity';
 
 type View = 'list' | 'room' | 'profile';
 
@@ -16,8 +16,21 @@ export default function Home() {
   const [channel, setChannel] = useState<ChannelDTO | null>(null);
 
   useEffect(() => {
-    setIdentity(getIdentity());
+    const local = getIdentity();
+    setIdentity(local);
     setReady(true);
+
+    // Refresca os dados do servidor — apanha mudanças de role feitas depois do login
+    const token = getToken();
+    if (!local || !token) return;
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.user) return;
+        saveIdentity(data.user, token);
+        setIdentity(data.user);
+      })
+      .catch(() => {});
   }, []);
 
   if (!ready) {

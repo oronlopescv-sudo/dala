@@ -19,12 +19,29 @@ export async function POST(req: NextRequest) {
     // Verificar se existe algum admin
     const adminExists = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
 
-    // Só admins podem promover outros, EXCETO auto-promoção se for o primeiro admin
+    // O role vem da base de dados, não do token: um token antigo (7 dias)
+    // ainda diria ADMIN depois de a pessoa ter sido despromovida.
+    const requester = await prisma.user.findUnique({ where: { id: payload.id } });
+    const requesterIsAdmin = requester?.role === 'ADMIN' && !requester.banned;
+
+    // Só admins promovem outros — exceto a auto-promoção do primeiro admin
     const isAutoPromote = payload.id === userId && role === 'ADMIN';
     if (!adminExists && isAutoPromote) {
       // Permitir: primeiro admin criado por auto-promoção
-    } else if (payload.role !== 'ADMIN') {
+    } else if (!requesterIsAdmin) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+    }
+
+    // Nunca deixar o sistema ficar sem nenhum admin
+    if (role === 'USER') {
+      const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+      const target = await prisma.user.findUnique({ where: { id: userId } });
+      if (adminCount <= 1 && target?.role === 'ADMIN') {
+        return NextResponse.json(
+          { error: 'Não podes remover o último admin. Promove outro primeiro.' },
+          { status: 400 }
+        );
+      }
     }
 
     // Buscar utilizador existente para comparar com role atual

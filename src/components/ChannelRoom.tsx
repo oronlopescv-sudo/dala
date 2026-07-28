@@ -61,8 +61,46 @@ export default function ChannelRoom({
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
   const [speakerOn, setSpeakerOn] = useState(true);
+  // O criador da sala entra sem precisar do código
+  const isCreator = !!channel.creatorId && channel.creatorId === identity.id;
+  const needsAccessCode =
+    channel.type === 'PRIVATE' &&
+    !!(channel.hasAccessCode ?? channel.accessCode) &&
+    !isCreator;
+  const [accessGranted, setAccessGranted] = useState(!needsAccessCode);
   const [accessDenied, setAccessDenied] = useState<AccessDeniedState>({ needsCode: false, enteredCode: '' });
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
+
+  // Valida o código no servidor e liberta o acesso ao canal
+  const [checkingCode, setCheckingCode] = useState(false);
+  const tryAccessCode = async () => {
+    const entered = accessDenied.enteredCode.trim().toUpperCase();
+    if (!entered) {
+      setCodeError('Escreve o código');
+      return;
+    }
+    setCheckingCode(true);
+    setCodeError(null);
+    try {
+      const res = await fetch('/api/channels/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: channel.id, code: entered }),
+      });
+      if (res.ok) {
+        setAccessDenied({ needsCode: false, enteredCode: '' });
+        setAccessGranted(true);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setCodeError(data.error ?? 'Código inválido');
+      }
+    } catch {
+      setCodeError('Erro de ligação. Tenta outra vez.');
+    } finally {
+      setCheckingCode(false);
+    }
+  };
 
   const socketRef = useRef<Socket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -224,8 +262,8 @@ export default function ChannelRoom({
       }
       if (cancelled) return;
 
-      // Se é canal privado com código, verificar antes de entrar
-      if (channel.type === 'PRIVATE' && channel.accessCode) {
+      // Se é canal privado com código, pedir o código antes de ligar o socket
+      if (!accessGranted) {
         setAccessDenied({ needsCode: true, enteredCode: '' });
         return;
       }
@@ -335,7 +373,7 @@ export default function ChannelRoom({
       audioContextRef.current?.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel.id]);
+  }, [channel.id, accessGranted]);
 
   // Auto-scroll do chat
   useEffect(() => {
@@ -499,33 +537,27 @@ export default function ChannelRoom({
             <input
               type="text"
               placeholder="Código de acesso"
+              autoFocus
               value={accessDenied.enteredCode}
-              onChange={(e) => setAccessDenied({ ...accessDenied, enteredCode: e.target.value.toUpperCase() })}
+              onChange={(e) => {
+                setAccessDenied({ ...accessDenied, enteredCode: e.target.value.toUpperCase() });
+                setCodeError(null);
+              }}
               className="flex-1 px-3 py-2 bg-emerald-800/50 border border-emerald-700 rounded text-white placeholder-emerald-500 text-center font-mono tracking-widest"
-              maxLength={6}
+              maxLength={20}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  if (accessDenied.enteredCode === channel.accessCode) {
-                    setAccessDenied({ needsCode: false, enteredCode: '' });
-                  } else {
-                    alert('Código inválido');
-                  }
-                }
+                if (e.key === 'Enter') tryAccessCode();
               }}
             />
             <button
-              onClick={() => {
-                if (accessDenied.enteredCode === channel.accessCode) {
-                  setAccessDenied({ needsCode: false, enteredCode: '' });
-                } else {
-                  alert('Código inválido');
-                }
-              }}
-              className="px-4 py-2 bg-amber-400 text-emerald-950 font-bold rounded hover:bg-amber-300 transition-colors"
+              onClick={tryAccessCode}
+              disabled={checkingCode}
+              className="px-4 py-2 bg-amber-400 text-emerald-950 font-bold rounded hover:bg-amber-300 transition-colors disabled:opacity-50"
             >
-              Entrar
+              {checkingCode ? '…' : 'Entrar'}
             </button>
           </div>
+          {codeError && <p className="mt-2 text-sm text-red-400">{codeError}</p>}
           <button
             onClick={onLeave}
             className="mt-4 w-full px-4 py-2 bg-emerald-800/50 text-emerald-300 font-semibold rounded hover:bg-emerald-800 transition-colors"

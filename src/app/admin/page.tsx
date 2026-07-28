@@ -65,8 +65,10 @@ export default function AdminPage() {
       const data = await res.json();
       setUsers(data.users ?? []);
       setReports(data.reports ?? []);
-      // Canais (route pública)
-      const chRes = await fetch('/api/channels');
+      // Canais — com token para receber também os códigos de acesso
+      const chRes = await fetch('/api/channels', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (chRes.ok) setChannels(await chRes.json());
     } finally {
       setLoading(false);
@@ -200,6 +202,27 @@ export default function AdminPage() {
       } else {
         const data = await res.json();
         alert(data.error || 'Erro ao apagar');
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const regenerateCode = async (c: AdminChannel) => {
+    if (!token) return;
+    if (!confirm(`Gerar novo código para "${c.name}"? O código antigo deixa de funcionar.`)) return;
+    setBusy(String(c.id));
+    try {
+      const res = await fetch('/api/admin/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ channelId: c.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setChannels((prev) => prev.map((x) => (x.id === c.id ? data.channel : x)));
+      } else {
+        alert(data.error || 'Erro ao regenerar código');
       }
     } finally {
       setBusy(null);
@@ -380,6 +403,16 @@ export default function AdminPage() {
                   </p>
                 )}
               </div>
+              {c.type === 'PRIVATE' && (
+                <button
+                  onClick={() => regenerateCode(c)}
+                  disabled={busy === String(c.id)}
+                  title="Gerar novo código aleatório"
+                  className="px-3 py-2 rounded-xl bg-amber-400/20 border border-amber-400/50 text-amber-300 text-xs font-bold disabled:opacity-50"
+                >
+                  🔄
+                </button>
+              )}
               <button
                 onClick={() => editChannel(c)}
                 disabled={busy === String(c.id)}

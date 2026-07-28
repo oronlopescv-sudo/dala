@@ -33,6 +33,13 @@ class MemoryDb {
           }
         } else if ('notIn' in valueObj && valueObj.notIn !== undefined) {
           if (valueObj.notIn.includes(obj[key])) return false;
+        } else if ('gte' in valueObj || 'gt' in valueObj || 'lte' in valueObj || 'lt' in valueObj) {
+          const v = obj[key];
+          if (v === null || v === undefined) return false;
+          if (valueObj.gte !== undefined && !(v >= valueObj.gte)) return false;
+          if (valueObj.gt !== undefined && !(v > valueObj.gt)) return false;
+          if (valueObj.lte !== undefined && !(v <= valueObj.lte)) return false;
+          if (valueObj.lt !== undefined && !(v < valueObj.lt)) return false;
         } else {
           // Nested relation
           if (obj[key] !== value) return false;
@@ -104,6 +111,12 @@ class MemoryDb {
         results = results.slice(0, args.take);
       }
       return results;
+    },
+
+    count: async (args?: any) => {
+      return Array.from(this.users.values()).filter((u) =>
+        this.matchesWhere(u, args?.where)
+      ).length;
     },
 
     update: async (args: any) => {
@@ -188,6 +201,12 @@ class MemoryDb {
       }
 
       return results.map((ch) => args?.include ? this.enrichChannel(ch, args.include) : ch);
+    },
+
+    count: async (args?: any) => {
+      return Array.from(this.channels.values()).filter((ch) =>
+        this.matchesWhere(ch, args?.where)
+      ).length;
     },
 
     update: async (args: any) => {

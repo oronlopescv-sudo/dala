@@ -9,6 +9,13 @@ export interface Identity {
   bio: string | null;
   country: string | null;
   language: string | null;
+  role?: 'USER' | 'ADMIN';
+}
+
+// Só mostra opções de admin a quem tem o papel de ADMIN.
+// É apenas para a interface — o servidor valida sempre o token à parte.
+export function isAdmin(): boolean {
+  return getIdentity()?.role === 'ADMIN';
 }
 
 const IDENTITY_KEY = 'dafala.identity';

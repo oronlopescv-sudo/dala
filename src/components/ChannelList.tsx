@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Plus, Hash, Lock, Music, Loader2, X, Radio } from 'lucide-react';
+import { Search, Plus, Hash, Lock, Music, Loader2, X, Radio, Shield } from 'lucide-react';
 import type { Identity } from '@/lib/identity';
+import { getToken } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
 import { cn } from '@/lib/cn';
 
@@ -13,6 +14,7 @@ export interface ChannelDTO {
   type: 'PUBLIC' | 'PRIVATE' | 'THEME';
   mode?: 'FREE' | 'MODERATED';
   accessCode?: string | null;
+  hasAccessCode?: boolean;
   expiresAt?: string | null;
   creatorId?: string | null;
   _count?: { messages: number };
@@ -42,7 +44,10 @@ export default function ChannelList({
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/channels');
+      const token = getToken();
+      const res = await fetch('/api/channels', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (res.ok) setChannels(await res.json());
     } finally {
       setLoading(false);
@@ -96,6 +101,16 @@ export default function ChannelList({
           <h1 className="text-xl font-bold text-emerald-50">TxamFala</h1>
         </div>
         <div className="flex items-center gap-3">
+          {identity.role === 'ADMIN' && (
+            <a
+              href="/admin"
+              aria-label="Painel de administração"
+              title="Painel Admin"
+              className="flex items-center justify-center w-9 h-9 rounded-full bg-amber-400/15 border border-amber-400/40 text-amber-400 active:scale-95"
+            >
+              <Shield className="w-4 h-4" />
+            </a>
+          )}
           <button
             onClick={shuffle}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/15 border border-amber-400/40 text-amber-400 text-xs font-bold uppercase tracking-wide active:scale-95"
@@ -239,6 +254,7 @@ function CreateChannelModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [createdChannel, setCreatedChannel] = useState<ChannelDTO | null>(null);
 
   const submit = async () => {
     if (!name.trim()) return;
@@ -270,7 +286,8 @@ function CreateChannelModal({
           description,
           type,
           mode,
-          accessCode: codeToSend || (type === 'PRIVATE' && !useCustomCode),
+          // true = pedir à API para gerar código aleatório
+          accessCode: type === 'PRIVATE' && !useCustomCode,
           creatorId: identity.id,
           customAccessCode: codeToSend,
         }),
@@ -278,8 +295,9 @@ function CreateChannelModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Falha ao criar canal');
 
-      // Se gerou código, mostrar antes de fechar
-      if (data.accessCode && !useCustomCode) {
+      // Se é sala privada com código, mostrar o código antes de entrar
+      if (data.accessCode) {
+        setCreatedChannel(data);
         setGeneratedCode(data.accessCode);
       } else {
         onCreated(data);
@@ -299,7 +317,7 @@ function CreateChannelModal({
   ];
 
   // Se gerou código, mostrar tela de confirmação
-  if (generatedCode) {
+  if (generatedCode && createdChannel) {
     return (
       <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/60 backdrop-blur-sm">
         <div className="w-full max-w-md bg-emerald-950 border-t border-emerald-800 rounded-t-3xl p-6 flex flex-col gap-4">
@@ -323,14 +341,7 @@ function CreateChannelModal({
           </div>
           <button
             onClick={() => {
-              onCreated({
-                id: 0,
-                name,
-                description: description || null,
-                type,
-                mode,
-                accessCode: generatedCode,
-              } as ChannelDTO);
+              onCreated(createdChannel);
               onClose();
             }}
             className="w-full py-3.5 font-bold text-emerald-950 uppercase bg-amber-400 rounded-2xl active:scale-95"

@@ -43,6 +43,42 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
+// POST /api/admin/channels/regenerate — regenerar código de sala privada
+// body: { channelId }
+export async function POST(req: NextRequest) {
+  try {
+    const admin = await requireAdmin(req);
+    if (!admin) {
+      return NextResponse.json({ error: 'Acesso negado — só admins' }, { status: 403 });
+    }
+
+    const { channelId } = await req.json();
+    if (!channelId) {
+      return NextResponse.json({ error: 'channelId é obrigatório' }, { status: 400 });
+    }
+
+    const channel = await prisma.channel.findUnique({ where: { id: Number(channelId) } });
+    if (!channel) {
+      return NextResponse.json({ error: 'Canal não encontrado' }, { status: 404 });
+    }
+
+    if (channel.type !== 'PRIVATE') {
+      return NextResponse.json({ error: 'Só é possível regenerar código em salas privadas' }, { status: 400 });
+    }
+
+    const newAccessCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const updated = await prisma.channel.update({
+      where: { id: Number(channelId) },
+      data: { accessCode: newAccessCode },
+    });
+
+    return NextResponse.json({ message: 'Código regenerado', channel: updated });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: 'Erro ao regenerar código' }, { status: 500 });
+  }
+}
+
 // DELETE /api/admin/channels — apagar um canal e o seu conteúdo
 // body: { channelId }
 export async function DELETE(req: NextRequest) {

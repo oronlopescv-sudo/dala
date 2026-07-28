@@ -1,6 +1,37 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
+import { verifyToken, extractToken } from '@/lib/auth';
 import type { ChannelType, ChannelMode } from '@prisma/client';
+
+// Só o admin e o criador da sala podem ver o código de acesso.
+// Para os restantes o campo é removido da resposta.
+type ChannelLike = { accessCode?: string | null; creatorId?: string | null };
+
+async function hideSecretCodes<T extends ChannelLike>(
+  channels: T[],
+  authHeader: string | null
+): Promise<(T & { hasAccessCode: boolean })[]> {
+  let viewerId: string | null = null;
+  let isAdmin = false;
+
+  const token = extractToken(authHeader);
+  if (token) {
+    const payload = verifyToken(token);
+    if (payload) {
+      viewerId = payload.id;
+      const user = await prisma.user.findUnique({ where: { id: payload.id } });
+      isAdmin = user?.role === 'ADMIN';
+    }
+  }
+
+  return channels.map((c) => {
+    const canSee = isAdmin || (viewerId !== null && c.creatorId === viewerId);
+    // hasAccessCode diz que a sala é protegida, sem revelar o código
+    return canSee
+      ? { ...c, hasAccessCode: !!c.accessCode }
+      : { ...c, accessCode: null, hasAccessCode: !!c.accessCode };
+  });
+}
 
 const DEFAULT_CHANNELS: { name: string; description: string; type: ChannelType }[] = [
   { name: 'Geral', description: 'Conversa livre sobre tudo', type: 'PUBLIC' },
@@ -27,7 +58,9 @@ export async function GET(req: Request) {
         orderBy: { createdAt: 'asc' },
         include: { _count: { select: { messages: true } } },
       });
-      return NextResponse.json(channels);
+      return NextResponse.json(
+        await hideSecretCodes(channels, req.headers.get('authorization'))
+      );
     }
 
     let channels = await prisma.channel.findMany({
@@ -43,7 +76,9 @@ export async function GET(req: Request) {
       });
     }
 
-    return NextResponse.json(channels);
+    return NextResponse.json(
+      await hideSecretCodes(channels, req.headers.get('authorization'))
+    );
   } catch (error) {
     console.error('GET /api/channels failed', error);
     return NextResponse.json({ error: 'Falha ao carregar canais' }, { status: 500 });
