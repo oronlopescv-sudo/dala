@@ -30,6 +30,8 @@ interface AdminChannel {
   name: string;
   description: string | null;
   type: 'PUBLIC' | 'PRIVATE' | 'THEME';
+  accessCode?: string | null;
+  expiresAt?: string | null;
 }
 
 export default function AdminPage() {
@@ -204,6 +206,27 @@ export default function AdminPage() {
     }
   };
 
+  const promoteAdmin = async (u: AdminUser) => {
+    if (!token) return;
+    if (!confirm(`Promover ${u.username} a ADMIN?`)) return;
+    setBusy(u.id);
+    try {
+      const res = await fetch('/api/admin/role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId: u.id, role: 'ADMIN' }),
+      });
+      if (res.ok) {
+        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, role: 'ADMIN' } : x)));
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao promover');
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const identity = typeof window !== 'undefined' ? getIdentity() : null;
   const filtered = users.filter(
     (u) =>
@@ -346,6 +369,16 @@ export default function AdminPage() {
                 {c.description && (
                   <p className="text-xs text-emerald-400 truncate">{c.description}</p>
                 )}
+                {c.type === 'PRIVATE' && c.accessCode && (
+                  <p className="text-[10px] text-amber-300 font-mono mt-1">
+                    🔐 Código: <b>{c.accessCode}</b>
+                    {c.expiresAt && (
+                      <span className="ml-1.5 text-amber-400/70">
+                        (expira em {new Date(c.expiresAt).toLocaleDateString('pt-PT')})
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => editChannel(c)}
@@ -404,30 +437,42 @@ export default function AdminPage() {
                 </p>
                 <p className="text-xs text-emerald-400 truncate">{u.email}</p>
               </div>
-              {u.role !== 'ADMIN' && (
-                <button
-                  onClick={() => banToggle(u)}
-                  disabled={busy === u.id}
-                  className={cn(
-                    'px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50',
-                    u.banned
-                      ? 'bg-emerald-900/60 text-emerald-200 border border-emerald-800'
-                      : 'bg-red-600 text-white'
-                  )}
-                >
-                  {u.banned ? (
-                    <>
-                      <Undo2 className="w-3.5 h-3.5 inline mr-1" />
-                      Desbanir
-                    </>
-                  ) : (
-                    <>
-                      <Ban className="w-3.5 h-3.5 inline mr-1" />
-                      Banir
-                    </>
-                  )}
-                </button>
-              )}
+              <div className="flex gap-2">
+                {u.role !== 'ADMIN' && (
+                  <button
+                    onClick={() => promoteAdmin(u)}
+                    disabled={busy === u.id}
+                    title="Promover a admin"
+                    className="px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50 bg-amber-400/20 text-amber-300 border border-amber-400/50 hover:bg-amber-400/30"
+                  >
+                    👑
+                  </button>
+                )}
+                {u.role !== 'ADMIN' && (
+                  <button
+                    onClick={() => banToggle(u)}
+                    disabled={busy === u.id}
+                    className={cn(
+                      'px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50',
+                      u.banned
+                        ? 'bg-emerald-900/60 text-emerald-200 border border-emerald-800'
+                        : 'bg-red-600 text-white'
+                    )}
+                  >
+                    {u.banned ? (
+                      <>
+                        <Undo2 className="w-3.5 h-3.5 inline mr-1" />
+                        Desbanir
+                      </>
+                    ) : (
+                      <>
+                        <Ban className="w-3.5 h-3.5 inline mr-1" />
+                        Banir
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
           {filtered.length === 0 && (
