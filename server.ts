@@ -256,6 +256,26 @@ app.prepare().then(async () => {
       });
     });
 
+    // ---- Conversa privada (1-para-1) ----
+    // Vai só para o socket do destinatário, não para o canal.
+    socket.on('send_private', (payload: { toSocketId: string; content: string }) => {
+      const { userName, userId } = socket.data;
+      const content = String(payload?.content ?? '').trim().slice(0, 500);
+      if (!payload?.toSocketId || !content) return;
+
+      const message = {
+        id: randomUUID(),
+        content,
+        fromSocketId: socket.id,
+        fromUserId: userId,
+        fromUserName: userName,
+        createdAt: new Date().toISOString(),
+      };
+
+      io.to(payload.toSocketId).emit('private_message', message);
+      socket.emit('private_message', message); // eco para quem enviou
+    });
+
     // ---- Voz PTT (vários oradores em simultâneo) ----
     socket.on('request_speak', () => {
       const { channelIdStr, userName } = socket.data;

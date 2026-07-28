@@ -39,6 +39,49 @@ interface FloatingReaction {
 
 type Tab = 'voice' | 'chat';
 
+interface PrivateMessage {
+  id: string;
+  content: string;
+  fromSocketId: string;
+  fromUserId: string | null;
+  fromUserName: string;
+  createdAt: string;
+}
+
+// Opções de captação: mono e com limpeza de ruído — voz não precisa de estéreo.
+const MIC_CONSTRAINTS: MediaStreamConstraints = {
+  audio: {
+    echoCancellation: true, // o mic não capta o som da coluna
+    noiseSuppression: true, // remove ruído de fundo
+    autoGainControl: true, // normaliza o volume da voz
+    channelCount: 1,
+  },
+};
+
+// Mensagem específica por tipo de falha — o utilizador precisa de saber
+// o que fazer, não só que "não deu".
+function describeMicError(err: unknown): string {
+  const name = (err as DOMException)?.name;
+  switch (name) {
+    case 'NotAllowedError':
+    case 'PermissionDeniedError':
+      return 'Permissão do microfone negada. Autoriza no cadeado 🔒 ao lado do endereço e tenta de novo.';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'Nenhum microfone encontrado neste dispositivo.';
+    case 'NotReadableError':
+    case 'TrackStartError':
+      // Comum no iPhone: outra app ou separador está a usar o microfone
+      return 'O microfone está a ser usado por outra app. Fecha-a e tenta de novo.';
+    case 'OverconstrainedError':
+      return 'O microfone não suporta esta configuração. Tenta outro dispositivo.';
+    case 'SecurityError':
+      return 'O navegador bloqueou o microfone por segurança. Verifica as definições do site.';
+    default:
+      return 'Não foi possível aceder ao microfone. Podes usar o chat de texto.';
+  }
+}
+
 export default function ChannelRoom({
   channel,
   identity,
@@ -71,6 +114,30 @@ export default function ChannelRoom({
   const [accessDenied, setAccessDenied] = useState<AccessDeniedState>({ needsCode: false, enteredCode: '' });
   const [codeError, setCodeError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
+  const [retryingMic, setRetryingMic] = useState(false);
+
+  // Conversa privada 1-para-1 com um membro do canal
+  const [privateChat, setPrivateChat] = useState<Member | null>(null);
+  const [privateMessages, setPrivateMessages] = useState<PrivateMessage[]>([]);
+  const [privateDraft, setPrivateDraft] = useState('');
+
+  // Volta a pedir o microfone a partir de um clique do utilizador.
+  // O Safari em iOS exige um gesto para autorizar — o pedido automático
+  // ao entrar na sala é negado sem sequer mostrar a caixa de permissão.
+  const retryMic = async () => {
+    if (retryingMic) return;
+    setRetryingMic(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = stream;
+      setMicError(null);
+    } catch (err) {
+      setMicError(describeMicError(err));
+    } finally {
+      setRetryingMic(false);
+    }
+  };
 
   // Valida o código no servidor e liberta o acesso ao canal
   const [checkingCode, setCheckingCode] = useState(false);
@@ -240,24 +307,9 @@ export default function ChannelRoom({
         setMicError('Este navegador não permite aceder ao microfone. Experimenta Chrome, Safari ou Firefox atualizados.');
       } else {
         try {
-          streamRef.current = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true, // Cancela o eco (o mic não capta o som da coluna)
-              noiseSuppression: true, // Remove ruído de fundo
-              autoGainControl: true, // Normaliza o volume da voz
-              channelCount: 1, // Mono — voz não precisa de estéreo, poupa banda
-            },
-          });
+          streamRef.current = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
         } catch (err) {
-          // Distingue os casos para o utilizador saber o que fazer
-          const name = (err as DOMException)?.name;
-          if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-            setMicError('Permissão do microfone negada. Autoriza nas definições do navegador para falar.');
-          } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-            setMicError('Nenhum microfone encontrado neste dispositivo.');
-          } else {
-            setMicError('Não foi possível aceder ao microfone. Podes usar o chat de texto.');
-          }
+          setMicError(describeMicError(err));
         }
       }
       if (cancelled) return;
@@ -353,6 +405,10 @@ export default function ChannelRoom({
       });
 
       socket.on('new_message', (msg: ChatMessage) => setMessages((prev) => [...prev, msg]));
+
+      socket.on('private_message', (msg: PrivateMessage) =>
+        setPrivateMessages((prev) => [...prev, msg])
+      );
 
       socket.on('new_reaction', (r: FloatingReaction) => {
         setReactions((prev) => [...prev, r]);
@@ -495,6 +551,47 @@ export default function ChannelRoom({
       /* ignora */
     }
   };
+
+  // Perfil público da pessoa selecionada — carregado ao abrir o painel
+  const [memberProfile, setMemberProfile] = useState<{
+    bio: string | null;
+    country: string | null;
+    language: string | null;
+    createdAt: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setMemberProfile(null);
+    const id = selectedMember?.userId;
+    if (!id) return;
+    let cancelled = false;
+    fetch(`/api/users/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setMemberProfile(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMember?.userId]);
+
+  const sendPrivate = () => {
+    const content = privateDraft.trim();
+    if (!content || !privateChat) return;
+    socketRef.current?.emit('send_private', {
+      toSocketId: privateChat.socketId,
+      content,
+    });
+    setPrivateDraft('');
+  };
+
+  // Mensagens trocadas só com a pessoa aberta na conversa
+  const conversationWith = privateChat
+    ? privateMessages.filter(
+        (m) => m.fromSocketId === privateChat.socketId || m.fromSocketId === socketRef.current?.id
+      )
+    : [];
 
   const addFriend = async (member: Member) => {
     if (!member.userId) return;
@@ -648,6 +745,13 @@ export default function ChannelRoom({
           {micError && (
             <div className="mb-4 px-4 py-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-sm text-center max-w-xs">
               🎤 {micError}
+              <button
+                onClick={retryMic}
+                disabled={retryingMic}
+                className="mt-2 w-full py-2 rounded-xl bg-amber-400 text-emerald-950 font-bold text-xs uppercase disabled:opacity-50 active:scale-95"
+              >
+                {retryingMic ? 'A pedir…' : '🔄 Tentar de novo'}
+              </button>
             </div>
           )}
           <div
@@ -849,6 +953,66 @@ export default function ChannelRoom({
         </div>
       )}
       {/* Modal de membro: perfil mini + ações */}
+      {/* Conversa privada 1-para-1 */}
+      {privateChat && (
+        <div className="absolute inset-0 z-40 flex flex-col bg-emerald-950">
+          <header className="flex items-center gap-3 px-5 py-4 border-b border-emerald-800/50">
+            <button onClick={() => setPrivateChat(null)} aria-label="Voltar" className="text-emerald-300">
+              ←
+            </button>
+            <Avatar name={privateChat.userName} photoUrl={privateChat.photoUrl} size={36} />
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-emerald-50 truncate">{privateChat.userName}</p>
+              <p className="text-[11px] text-emerald-400">🔒 conversa privada</p>
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-2">
+            {conversationWith.length === 0 && (
+              <p className="text-sm text-emerald-500 text-center py-8">
+                Só tu e {privateChat.userName} veem estas mensagens.
+              </p>
+            )}
+            {conversationWith.map((m) => {
+              const mine = m.fromSocketId === socketRef.current?.id;
+              return (
+                <div
+                  key={m.id}
+                  className={cn(
+                    'max-w-[80%] px-3.5 py-2 rounded-2xl text-sm',
+                    mine
+                      ? 'self-end bg-amber-400 text-emerald-950'
+                      : 'self-start bg-emerald-900/60 text-emerald-50 border border-emerald-800/50'
+                  )}
+                >
+                  {m.content}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 px-5 py-4 border-t border-emerald-800/50">
+            <input
+              value={privateDraft}
+              onChange={(e) => setPrivateDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') sendPrivate();
+              }}
+              placeholder={`Mensagem para ${privateChat.userName}…`}
+              maxLength={500}
+              className="flex-1 px-4 py-2.5 bg-emerald-900/40 border border-emerald-800/50 rounded-2xl text-emerald-50 placeholder:text-emerald-500 focus:outline-none text-sm"
+            />
+            <button
+              onClick={sendPrivate}
+              disabled={!privateDraft.trim()}
+              className="px-4 py-2.5 rounded-2xl bg-amber-400 text-emerald-950 font-bold text-sm disabled:opacity-40"
+            >
+              Enviar
+            </button>
+          </div>
+        </div>
+      )}
+
       {selectedMember && (
         <div
           className="absolute inset-0 z-30 flex items-end justify-center bg-black/60"
@@ -860,16 +1024,44 @@ export default function ChannelRoom({
           >
             <div className="flex items-center gap-4 mb-6">
               <Avatar name={selectedMember.userName} photoUrl={selectedMember.photoUrl} size={56} />
-              <div>
+              <div className="min-w-0">
                 <p className="text-lg font-bold text-emerald-50">{selectedMember.userName}</p>
-                <p className="text-xs text-emerald-400">membro do canal</p>
+                <p className="text-xs text-emerald-400">
+                  {memberProfile?.country
+                    ? `${memberProfile.country}${memberProfile.language ? ` · fala ${memberProfile.language}` : ''}`
+                    : 'membro do canal'}
+                </p>
+                {memberProfile?.createdAt && (
+                  <p className="text-[11px] text-emerald-500 mt-0.5">
+                    entrou em{' '}
+                    {new Date(memberProfile.createdAt).toLocaleDateString('pt-PT', {
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </p>
+                )}
               </div>
             </div>
 
+            {memberProfile?.bio && (
+              <p className="mb-5 px-3 py-2.5 rounded-xl bg-emerald-900/40 border border-emerald-800/50 text-sm text-emerald-200">
+                {memberProfile.bio}
+              </p>
+            )}
+
             <div className="flex flex-col gap-2">
               <button
-                onClick={() => addFriend(selectedMember)}
+                onClick={() => {
+                  setPrivateChat(selectedMember);
+                  setSelectedMember(null);
+                }}
                 className="w-full py-3 rounded-xl bg-amber-400 text-emerald-950 font-semibold text-sm"
+              >
+                💬 Falar só com {selectedMember.userName}
+              </button>
+              <button
+                onClick={() => addFriend(selectedMember)}
+                className="w-full py-3 rounded-xl bg-emerald-900/60 text-emerald-100 font-semibold text-sm border border-emerald-800"
               >
                 ➕ Adicionar amigo
               </button>
