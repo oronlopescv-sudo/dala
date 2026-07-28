@@ -117,8 +117,13 @@ export async function POST(req: Request) {
 
     // Gerar ou usar código de acesso personalizado para canais privados
     let accessCode: string | null = null;
-    if (type === 'PRIVATE' && body.accessCode) {
-      accessCode = body.customAccessCode || Math.random().toString(36).substring(2, 8).toUpperCase();
+    if (type === 'PRIVATE') {
+      if (body.customAccessCode && typeof body.customAccessCode === 'string') {
+        accessCode = body.customAccessCode;
+      } else if (body.accessCode === true) {
+        // Se accessCode foi true, gerar aleatório
+        accessCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      }
     }
 
     // Definir expiração para canais privados: +5 dias

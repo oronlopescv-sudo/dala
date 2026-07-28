@@ -26,12 +26,13 @@ class MemoryDb {
 
       // Handle nested objects with operators
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        if (value.contains !== undefined) {
-          if (typeof obj[key] !== 'string' || !obj[key].toLowerCase().includes(value.contains.toLowerCase())) {
+        const valueObj = value as Record<string, any>;
+        if ('contains' in valueObj && valueObj.contains !== undefined) {
+          if (typeof obj[key] !== 'string' || !obj[key].toLowerCase().includes(valueObj.contains.toLowerCase())) {
             return false;
           }
-        } else if (value.notIn !== undefined) {
-          if (value.notIn.includes(obj[key])) return false;
+        } else if ('notIn' in valueObj && valueObj.notIn !== undefined) {
+          if (valueObj.notIn.includes(obj[key])) return false;
         } else {
           // Nested relation
           if (obj[key] !== value) return false;

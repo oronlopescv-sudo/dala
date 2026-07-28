@@ -93,7 +93,7 @@ export default function ChannelList({
       <header className="flex items-center justify-between px-5 py-4 border-b border-emerald-800/50">
         <div className="flex items-center gap-2">
           <Radio className="w-6 h-6 text-amber-400" />
-          <h1 className="text-xl font-bold text-emerald-50">Da Fala</h1>
+          <h1 className="text-xl font-bold text-emerald-50">TxamFala</h1>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -297,6 +297,50 @@ function CreateChannelModal({
     { value: 'THEME', label: 'Tema' },
     { value: 'PRIVATE', label: 'Privado' },
   ];
+
+  // Se gerou código, mostrar tela de confirmação
+  if (generatedCode) {
+    return (
+      <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+        <div className="w-full max-w-md bg-emerald-950 border-t border-emerald-800 rounded-t-3xl p-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-emerald-50">Canal Criado! 🎉</h2>
+            <button onClick={onClose} aria-label="Fechar">
+              <X className="w-5 h-5 text-emerald-400" />
+            </button>
+          </div>
+          <p className="text-sm text-emerald-300">Código de acesso para convidar outros:</p>
+          <div className="flex items-center gap-2 bg-emerald-900/60 border border-emerald-800 rounded-lg p-4">
+            <code className="flex-1 text-lg font-mono font-bold text-amber-400">{generatedCode}</code>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(generatedCode);
+              }}
+              className="px-3 py-2 bg-amber-400 text-emerald-950 font-bold rounded text-sm active:scale-95"
+            >
+              📋 Copiar
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              onCreated({
+                id: 0,
+                name,
+                description: description || null,
+                type,
+                mode,
+                accessCode: generatedCode,
+              } as ChannelDTO);
+              onClose();
+            }}
+            className="w-full py-3.5 font-bold text-emerald-950 uppercase bg-amber-400 rounded-2xl active:scale-95"
+          >
+            ✅ Entrar no canal
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/60 backdrop-blur-sm">

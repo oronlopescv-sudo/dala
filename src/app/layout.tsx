@@ -13,13 +13,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Da Fala",
+  title: "TxamFala",
   description: "Walkie-Talkie social de Cabo Verde",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Da Fala",
+    title: "TxamFala",
   },
 };
 
