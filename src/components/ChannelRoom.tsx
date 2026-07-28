@@ -417,6 +417,9 @@ export default function ChannelRoom({
   const handlePttStart = (e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
     if (handsFreeRef.current) return; // Em mãos livres o botão grande não faz PTT
+    // Sem microfone não há áudio para enviar: mostrar "estás a falar" seria
+    // enganador, porque ninguém ouviria nada.
+    if (!streamRef.current) return;
     if (navigator.vibrate) navigator.vibrate(50);
     if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
     playPttStart();
@@ -438,6 +441,8 @@ export default function ChannelRoom({
 
   // Viva voz / mãos livres: toggle que mantém o mic aberto
   const toggleHandsFree = () => {
+    // Sem microfone o viva voz não teria nada para transmitir
+    if (!streamRef.current) return;
     if (navigator.vibrate) navigator.vibrate(50);
     if (handsFreeRef.current) {
       // Desligar
@@ -751,12 +756,15 @@ export default function ChannelRoom({
               onMouseDown={handlePttStart}
               onMouseUp={handlePttEnd}
               onMouseLeave={handlePttEnd}
+              disabled={!!micError}
               className={cn(
                 'relative z-10 flex items-center justify-center w-60 h-60 rounded-full shadow-2xl transition-all duration-100 select-none',
-                isSpeaking
-                  ? 'bg-lime-500 scale-95'
-                  : 'bg-amber-400 active:scale-95 shadow-[0_20px_40px_rgba(0,0,0,0.3)]',
-                handsFree && 'ring-4 ring-lime-400/60'
+                micError
+                  ? 'bg-emerald-800/50 cursor-not-allowed' // sem microfone não dá para falar
+                  : isSpeaking
+                    ? 'bg-lime-500 scale-95'
+                    : 'bg-amber-400 active:scale-95 shadow-[0_20px_40px_rgba(0,0,0,0.3)]',
+                handsFree && !micError && 'ring-4 ring-lime-400/60'
               )}
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
@@ -769,7 +777,11 @@ export default function ChannelRoom({
           </div>
 
           <p className="mt-10 text-emerald-400/60 uppercase tracking-widest text-sm">
-            {handsFree ? 'Viva voz ligado — mic aberto' : 'Segura para falar'}
+            {micError
+              ? 'Sem microfone — usa o chat'
+              : handsFree
+                ? 'Viva voz ligado — mic aberto'
+                : 'Segura para falar'}
           </p>
 
           {/* Botão viva voz (mãos livres) */}
