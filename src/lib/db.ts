@@ -511,17 +511,7 @@ const globalForPrisma = globalThis as unknown as { __prisma?: any };
 const client = globalForPrisma.__prisma ?? createClient();
 if (process.env.NODE_ENV !== 'production') globalForPrisma.__prisma = client;
 
-// Se a base de dados não responder, passa a usar o fallback em memória
-// em vez de deixar a app morrer.
-const memoryFallback = new MemoryDb();
-const prisma: any = new Proxy(client, {
-  get(target, prop) {
-    const value = Reflect.get(target, prop);
-    if (value !== undefined) return value;
-    // Método que o cliente real não tem (ex.: no fallback) — tenta o de memória
-    return Reflect.get(memoryFallback, prop);
-  },
-});
+const prisma: any = client;
 
 // Testa a ligação sem bloquear o arranque
 if (!isUsingFallback) {
