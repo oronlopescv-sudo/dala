@@ -8,13 +8,17 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 export async function ensureAdmin() {
-  const email = process.env.ADMIN_EMAIL;
+  const rawEmail = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
 
-  if (!email || !password) {
+  if (!rawEmail || !password) {
     console.log('> ADMIN_EMAIL/ADMIN_PASSWORD não definidos — skip admin seed');
     return;
   }
+
+  // Tem de bater certo com o login, que normaliza para minúsculas.
+  // Sem isto, ADMIN_EMAIL em maiúsculas cria uma conta que nunca é encontrada.
+  const email = rawEmail.trim().toLowerCase();
 
   const hashed = await bcrypt.hash(password, 10);
 
