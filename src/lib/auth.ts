@@ -8,7 +8,8 @@ function getJWTSecret(): string {
   return secret;
 }
 
-const JWT_SECRET = getJWTSecret();
+// NÃO avaliar aqui: durante o build (Collecting page data) as variáveis de
+// ambiente não existem, e o import rebentaria. Só se lê em execução.
 
 export interface JWTPayload {
   id: string;
@@ -42,7 +43,7 @@ export function sanitizeUser(user: User): Omit<User, 'password'> {
 
 export function verifyToken(token: string): JWTPayload | null {
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as JWTPayload;
+    const payload = jwt.verify(token, getJWTSecret()) as JWTPayload;
     return payload;
   } catch {
     return null;
