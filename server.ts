@@ -267,6 +267,7 @@ app.prepare().then(async () => {
         id: randomUUID(),
         content,
         fromSocketId: socket.id,
+        toSocketId: payload.toSocketId,
         fromUserId: userId,
         fromUserName: userName,
         createdAt: new Date().toISOString(),

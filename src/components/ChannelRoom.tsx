@@ -43,6 +43,7 @@ interface PrivateMessage {
   id: string;
   content: string;
   fromSocketId: string;
+  toSocketId: string;
   fromUserId: string | null;
   fromUserName: string;
   createdAt: string;
@@ -120,6 +121,8 @@ export default function ChannelRoom({
   const [privateChat, setPrivateChat] = useState<Member | null>(null);
   const [privateMessages, setPrivateMessages] = useState<PrivateMessage[]>([]);
   const [privateDraft, setPrivateDraft] = useState('');
+  // socketIds de quem me mandou mensagem que ainda não li
+  const [unreadPrivate, setUnreadPrivate] = useState<Set<string>>(new Set());
 
   // Volta a pedir o microfone a partir de um clique do utilizador.
   // O Safari em iOS exige um gesto para autorizar — o pedido automático
@@ -406,9 +409,14 @@ export default function ChannelRoom({
 
       socket.on('new_message', (msg: ChatMessage) => setMessages((prev) => [...prev, msg]));
 
-      socket.on('private_message', (msg: PrivateMessage) =>
-        setPrivateMessages((prev) => [...prev, msg])
-      );
+      socket.on('private_message', (msg: PrivateMessage) => {
+        setPrivateMessages((prev) => [...prev, msg]);
+        // Avisa quem recebeu, para não passar despercebido com a conversa fechada
+        if (msg.fromSocketId !== socket.id) {
+          setUnreadPrivate((prev) => new Set(prev).add(msg.fromSocketId));
+          playIncoming();
+        }
+      });
 
       socket.on('new_reaction', (r: FloatingReaction) => {
         setReactions((prev) => [...prev, r]);
@@ -586,10 +594,13 @@ export default function ChannelRoom({
     setPrivateDraft('');
   };
 
-  // Mensagens trocadas só com a pessoa aberta na conversa
+  // Mensagens trocadas só com a pessoa aberta na conversa.
+  // Sem verificar o destinatário, as minhas mensagens apareceriam em
+  // todas as conversas privadas ao mesmo tempo.
   const conversationWith = privateChat
     ? privateMessages.filter(
-        (m) => m.fromSocketId === privateChat.socketId || m.fromSocketId === socketRef.current?.id
+        (m) =>
+          m.fromSocketId === privateChat.socketId || m.toSocketId === privateChat.socketId
       )
     : [];
 
@@ -1052,12 +1063,19 @@ export default function ChannelRoom({
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => {
-                  setPrivateChat(selectedMember);
+                  const m = selectedMember;
+                  setPrivateChat(m);
+                  setUnreadPrivate((prev) => {
+                    const next = new Set(prev);
+                    next.delete(m.socketId);
+                    return next;
+                  });
                   setSelectedMember(null);
                 }}
                 className="w-full py-3 rounded-xl bg-amber-400 text-emerald-950 font-semibold text-sm"
               >
                 💬 Falar só com {selectedMember.userName}
+                {unreadPrivate.has(selectedMember.socketId) && ' 🔴'}
               </button>
               <button
                 onClick={() => addFriend(selectedMember)}
