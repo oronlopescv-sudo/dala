@@ -1025,8 +1025,9 @@ export default function ChannelRoom({
             {handsFree ? 'Desligar viva voz' : 'Viva voz'}
           </button>
 
-          {/* Rádio: transmite uma música do meu telemóvel para o canal */}
-          {!micError && canBroadcast && (
+          {/* Rádio: transmite uma música do meu telemóvel para o canal.
+              Só em canais RADIO — nos outros canais não há opção de música. */}
+          {!micError && canBroadcast && isRadio && (
             <>
               <input
                 ref={radioFileRef}
