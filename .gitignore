@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# ficheiros enviados pelos utilizadores — ficam no VPS, nunca no repositório
+/public/uploads/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
