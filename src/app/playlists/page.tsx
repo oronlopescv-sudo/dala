@@ -5,6 +5,7 @@ import PlaylistList from '@/components/PlaylistList';
 import PlaylistForm from '@/components/PlaylistForm';
 import PlaylistPlayer from '@/components/PlaylistPlayer';
 import AddMusicButton from '@/components/AddMusicButton';
+import MusicList from '@/components/MusicList';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { getIdentity, type Identity } from '@/lib/identity';
@@ -60,7 +61,23 @@ export default function PlaylistsPage() {
           />
         )}
 
-        <PlaylistPlayer playlist={selectedPlaylist} onClose={() => setSelectedPlaylist(null)} />
+        <div className="flex-1 overflow-y-auto">
+          <MusicList
+            playlistId={selectedPlaylist.id}
+            musics={selectedPlaylist.musics}
+            canEdit={identity?.id === selectedPlaylist.creator.id}
+            onRemoved={(musicId) =>
+              setSelectedPlaylist({
+                ...selectedPlaylist,
+                musics: selectedPlaylist.musics.filter((m) => m.id !== musicId),
+              })
+            }
+          />
+        </div>
+
+        {selectedPlaylist.musics.length > 0 && (
+          <PlaylistPlayer playlist={selectedPlaylist} onClose={() => setSelectedPlaylist(null)} />
+        )}
       </div>
     );
   }
