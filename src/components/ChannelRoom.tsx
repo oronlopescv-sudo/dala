@@ -2,7 +2,21 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { Mic, MicOff, Users, ArrowLeft, Send, Smile, Radio, Music, Share2 } from 'lucide-react';
+import {
+  Mic,
+  MicOff,
+  Users,
+  ArrowLeft,
+  Send,
+  Smile,
+  Radio,
+  Music,
+  Share2,
+  Play,
+  Pause,
+  Square,
+  SkipForward,
+} from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { REACTION_EMOJIS } from '@/lib/constants';
 import { registerServiceWorker, requestNotificationPermission, notifySpeaker } from '@/lib/pwa';
@@ -88,6 +102,7 @@ export default function ChannelRoom({
   const [micError, setMicError] = useState<string | null>(null);
   // Nome da faixa que estou a transmitir (null = rádio desligada)
   const [radioTrack, setRadioTrack] = useState<string | null>(null);
+  const [musicPaused, setMusicPaused] = useState(false);
   const radioFileRef = useRef<HTMLInputElement>(null);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
 
@@ -268,6 +283,19 @@ export default function ChannelRoom({
     }
   }, [channel.name]);
 
+  // Pausa/retoma a música sem sair da rádio — a faixa fica onde estava.
+  const toggleMusicPause = useCallback(() => {
+    const el = musicElRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play().catch(() => {});
+      setMusicPaused(false);
+    } else {
+      el.pause();
+      setMusicPaused(true);
+    }
+  }, []);
+
   // Baixa a música enquanto falo e volta a subir quando calo.
   // Só mexe no volume — a faixa continua a correr de onde ia.
   const duckMusic = useCallback((aFalar: boolean) => {
@@ -300,6 +328,7 @@ export default function ChannelRoom({
       if (!isSpeakingRef.current) socketRef.current?.emit('release_speak');
     }
     setRadioTrack(null);
+    setMusicPaused(false);
   }, []);
 
   // Escolhe um ficheiro do telemóvel e começa a transmitir para o canal.
@@ -344,6 +373,7 @@ export default function ChannelRoom({
       el.onended = () => stopRadio();
 
       radioOnRef.current = true;
+      setMusicPaused(false);
       setRadioTrack(file.name.replace(/\.[^.]+$/, ''));
       await el.play();
       socketRef.current?.emit('request_speak');
@@ -1009,24 +1039,64 @@ export default function ChannelRoom({
                   e.target.value = ''; // permite escolher o mesmo ficheiro outra vez
                 }}
               />
-              <button
-                onClick={() => (radioTrack ? stopRadio() : radioFileRef.current?.click())}
-                className={cn(
-                  'mt-3 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-wide border transition-colors max-w-[280px]',
-                  radioTrack
-                    ? 'bg-amber-400 text-emerald-950 border-amber-300'
-                    : 'bg-emerald-900/50 text-emerald-300 border-emerald-800/50'
-                )}
-              >
-                <Music className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">
-                  {radioTrack ? `Parar · ${radioTrack}` : 'Tocar música'}
-                </span>
-              </button>
-              {radioTrack && (
-                <p className="mt-2 text-[11px] text-amber-400/80 text-center max-w-[280px]">
-                  A transmitir para o canal. Usa auscultadores para evitar eco.
-                </p>
+              {!radioTrack ? (
+                <button
+                  onClick={() => radioFileRef.current?.click()}
+                  className="mt-3 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-wide border transition-colors bg-emerald-900/50 text-emerald-300 border-emerald-800/50"
+                >
+                  <Music className="w-4 h-4 flex-shrink-0" />
+                  Tocar música
+                </button>
+              ) : (
+                <div className="mt-3 w-full max-w-[300px]">
+                  <p className="flex items-center gap-1.5 justify-center text-xs text-amber-400 font-bold mb-2">
+                    <Music className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{radioTrack}</span>
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={toggleMusicPause}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-amber-400 text-emerald-950 text-xs font-bold uppercase active:scale-95"
+                    >
+                      {musicPaused ? (
+                        <>
+                          <Play className="w-4 h-4" />
+                          Continuar
+                        </>
+                      ) : (
+                        <>
+                          <Pause className="w-4 h-4" />
+                          Pausa
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => radioFileRef.current?.click()}
+                      title="Trocar de música"
+                      aria-label="Trocar de música"
+                      className="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-900/60 text-emerald-200 border border-emerald-800/50 active:scale-95"
+                    >
+                      <SkipForward className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={stopRadio}
+                      title="Parar a rádio"
+                      aria-label="Parar a rádio"
+                      className="flex items-center justify-center w-11 h-11 rounded-full bg-red-900/40 text-red-300 border border-red-900/50 active:scale-95"
+                    >
+                      <Square className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <p className="mt-2 text-[11px] text-amber-400/80 text-center">
+                    {musicPaused
+                      ? 'Música em pausa — podes falar à vontade.'
+                      : 'A transmitir. Usa auscultadores para evitar eco.'}
+                  </p>
+                </div>
               )}
             </>
           )}
