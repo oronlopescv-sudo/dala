@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { Mic, MicOff, Users, ArrowLeft, Send, Smile, Radio } from 'lucide-react';
+import { Mic, MicOff, Users, ArrowLeft, Send, Smile, Radio, Music, Share2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { REACTION_EMOJIS } from '@/lib/constants';
 import { registerServiceWorker, requestNotificationPermission, notifySpeaker } from '@/lib/pwa';
@@ -82,6 +82,10 @@ export default function ChannelRoom({
   const [accessDenied, setAccessDenied] = useState<AccessDeniedState>({ needsCode: false, enteredCode: '' });
   const [codeError, setCodeError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
+  // Nome da faixa que estou a transmitir (null = rádio desligada)
+  const [radioTrack, setRadioTrack] = useState<string | null>(null);
+  const radioFileRef = useRef<HTMLInputElement>(null);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
 
   // Conversa privada 1-para-1 com um membro do canal
   const [privateChat, setPrivateChat] = useState<Member | null>(null);
@@ -123,9 +127,14 @@ export default function ChannelRoom({
   const socketRef = useRef<Socket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  // Captura PCM (streaming): source do mic + processor que empacota amostras
-  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  // Captura PCM (streaming): mistura (mic + rádio) + processor que empacota amostras
+  const sourceNodeRef = useRef<AudioNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  // Rádio: toco música do meu telemóvel e ela vai para o canal com a minha voz
+  const mixerRef = useRef<GainNode | null>(null);
+  const musicSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const musicElRef = useRef<HTMLAudioElement | null>(null);
+  const radioOnRef = useRef(false);
   const nextStartTimeRef = useRef(0);
   const isSpeakingRef = useRef(false);
   const handsFreeRef = useRef(false);
@@ -163,7 +172,20 @@ export default function ChannelRoom({
     if (!ctx || !streamRef.current) return;
     if (processorRef.current) return; // já a capturar
 
-    const source = ctx.createMediaStreamSource(streamRef.current);
+    // Tudo o que vai para o canal passa por aqui: o microfone e, quando há
+    // rádio a tocar, também a música. Assim posso falar por cima da música.
+    const mixer = ctx.createGain();
+    mixerRef.current = mixer;
+
+    const micSource = ctx.createMediaStreamSource(streamRef.current);
+    micSource.connect(mixer);
+
+    // Se a rádio já estava a tocar, liga a música à mistura
+    if (musicSourceRef.current) {
+      musicSourceRef.current.connect(mixer);
+    }
+
+    const source = mixer;
     // createScriptProcessor está descontinuado mas continua a ser o único caminho
     // suportado em todo o lado. Alguns navegadores expõem-no com o nome antigo
     // (webkit) e outros podem removê-lo — daí a verificação antes de usar.
@@ -184,12 +206,15 @@ export default function ChannelRoom({
     const sampleRate = ctx.sampleRate;
 
     processor.onaudioprocess = (e) => {
-      if (!isSpeakingRef.current || !socketRef.current) return;
+      // Transmite enquanto estou a falar OU enquanto a rádio toca — senão a
+      // música só saía com o botão premido.
+      if ((!isSpeakingRef.current && !radioOnRef.current) || !socketRef.current) return;
       const input = e.inputBuffer.getChannelData(0); // Float32 mono
       const pcm = new Int16Array(input.length);
+      // A música já vem com nível alto: o ganho da voz distorceria-a.
+      const gain = radioOnRef.current ? 1.0 : 1.4;
       for (let i = 0; i < input.length; i++) {
-        // ganho leve (voz mais audível) + clamp para não distorcer
-        const s = Math.max(-1, Math.min(1, input[i] * 1.4));
+        const s = Math.max(-1, Math.min(1, input[i] * gain));
         pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
       // pacote: [Uint32 sampleRate LE][Int16 PCM...]
@@ -209,6 +234,79 @@ export default function ChannelRoom({
     sourceNodeRef.current = source;
     processorRef.current = processor;
   }, []);
+
+  // Partilha a sala para WhatsApp, Facebook, etc. usando o menu nativo do
+  // telemóvel. Se o navegador não o tiver, copia o link.
+  const shareChannel = useCallback(async () => {
+    const url = `${window.location.origin}/?canal=${encodeURIComponent(channel.name)}`;
+    const text = `Vem falar comigo na sala "${channel.name}" no TxamFala!`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `TxamFala · ${channel.name}`, text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      setShareMsg('Link copiado!');
+      setTimeout(() => setShareMsg(null), 2000);
+    } catch {
+      // O utilizador cancelou a partilha — não é erro
+    }
+  }, [channel.name]);
+
+  const stopRadio = useCallback(() => {
+    const el = musicElRef.current;
+    if (el) {
+      el.pause();
+      URL.revokeObjectURL(el.src);
+      el.onended = null;
+    }
+    musicSourceRef.current?.disconnect();
+    musicSourceRef.current = null;
+    musicElRef.current = null;
+    if (radioOnRef.current) {
+      radioOnRef.current = false;
+      // Só larga a palavra se eu não estiver a falar — senão a rádio a
+      // terminar cortava-me a voz no meio de uma frase.
+      if (!isSpeakingRef.current) socketRef.current?.emit('release_speak');
+    }
+    setRadioTrack(null);
+  }, []);
+
+  // Escolhe um ficheiro do telemóvel e começa a transmitir para o canal.
+  // A música fica no aparelho — o que viaja é o som, como acontece com a voz.
+  const startRadio = useCallback(
+    async (file: File) => {
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
+      if (ctx.state === 'suspended') await ctx.resume();
+
+      stopRadio(); // troca de faixa: limpa a anterior
+
+      // Garante que a captação existe: se ainda não falei nesta sala, o
+      // mixer não estaria criado e a música não chegaria ao canal.
+      startRecording();
+
+      const el = new Audio(URL.createObjectURL(file));
+      el.loop = false;
+      musicElRef.current = el;
+
+      const src = ctx.createMediaElementSource(el);
+      musicSourceRef.current = src;
+
+      // Ouço a música no meu aparelho...
+      src.connect(ctx.destination);
+      // ...e ela entra na mistura que vai para o canal
+      if (mixerRef.current) src.connect(mixerRef.current);
+
+      el.onended = () => stopRadio();
+
+      radioOnRef.current = true;
+      setRadioTrack(file.name.replace(/\.[^.]+$/, ''));
+      await el.play();
+      socketRef.current?.emit('request_speak');
+    },
+    [stopRadio, startRecording]
+  );
 
   const playAudioBuffer = useCallback((audioBuffer: AudioBuffer) => {
     const ctx = audioContextRef.current;
@@ -391,11 +489,24 @@ export default function ChannelRoom({
 
     return () => {
       cancelled = true;
+      // Sem isto a música continuava a tocar depois de sair da sala
+      const el = musicElRef.current;
+      if (el) {
+        el.pause();
+        URL.revokeObjectURL(el.src);
+        el.onended = null;
+      }
+      musicSourceRef.current?.disconnect();
+      musicSourceRef.current = null;
+      musicElRef.current = null;
+      radioOnRef.current = false;
+
       socketRef.current?.disconnect();
       processorRef.current?.disconnect();
       sourceNodeRef.current?.disconnect();
       processorRef.current = null;
       sourceNodeRef.current = null;
+      mixerRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       audioContextRef.current?.close().catch(() => {});
     };
@@ -408,10 +519,14 @@ export default function ChannelRoom({
   }, [messages, tab]);
 
   const stopRecording = () => {
+    // Com a rádio a tocar, a captação tem de continuar viva: desligá-la aqui
+    // calaria a música só por eu ter largado o botão de falar.
+    if (radioOnRef.current) return;
     processorRef.current?.disconnect();
     sourceNodeRef.current?.disconnect();
     processorRef.current = null;
     sourceNodeRef.current = null;
+    mixerRef.current = null;
   };
 
   const handlePttStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -435,7 +550,8 @@ export default function ChannelRoom({
       setIsSpeaking(false);
       stopRecording();
       playPttEnd();
-      socketRef.current?.emit('release_speak');
+      // Com a rádio a tocar mantenho a palavra: a música continua a sair.
+      if (!radioOnRef.current) socketRef.current?.emit('release_speak');
     }
   };
 
@@ -662,6 +778,14 @@ export default function ChannelRoom({
           </div>
         </div>
         <button
+          onClick={shareChannel}
+          aria-label="Partilhar sala"
+          title="Partilhar sala"
+          className="flex items-center justify-center w-10 h-10 rounded-full border border-emerald-800/50 bg-emerald-900/50 text-emerald-200"
+        >
+          <Share2 className="w-4 h-4" />
+        </button>
+        <button
           onClick={() => {
             const next = !speakerOn;
             setSpeakerOn(next);
@@ -718,6 +842,12 @@ export default function ChannelRoom({
           </div>
         ))}
       </div>
+
+      {shareMsg && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-amber-400 text-emerald-950 text-sm font-bold shadow-lg">
+          {shareMsg}
+        </div>
+      )}
 
       {tab === 'voice' ? (
         <main className="flex-1 flex flex-col items-center justify-center p-6 relative">
@@ -797,6 +927,42 @@ export default function ChannelRoom({
             <Radio className="w-4 h-4" />
             {handsFree ? 'Desligar viva voz' : 'Viva voz'}
           </button>
+
+          {/* Rádio: transmite uma música do meu telemóvel para o canal */}
+          {!micError && (
+            <>
+              <input
+                ref={radioFileRef}
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) startRadio(f);
+                  e.target.value = ''; // permite escolher o mesmo ficheiro outra vez
+                }}
+              />
+              <button
+                onClick={() => (radioTrack ? stopRadio() : radioFileRef.current?.click())}
+                className={cn(
+                  'mt-3 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-wide border transition-colors max-w-[280px]',
+                  radioTrack
+                    ? 'bg-amber-400 text-emerald-950 border-amber-300'
+                    : 'bg-emerald-900/50 text-emerald-300 border-emerald-800/50'
+                )}
+              >
+                <Music className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">
+                  {radioTrack ? `Parar · ${radioTrack}` : 'Tocar música'}
+                </span>
+              </button>
+              {radioTrack && (
+                <p className="mt-2 text-[11px] text-amber-400/80 text-center max-w-[280px]">
+                  A transmitir para o canal. Usa auscultadores para evitar eco.
+                </p>
+              )}
+            </>
+          )}
 
           {/* Reações rápidas */}
           <div className="flex gap-2 mt-8">
