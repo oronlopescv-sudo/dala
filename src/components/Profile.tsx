@@ -25,6 +25,13 @@ export default function Profile({
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -52,6 +59,52 @@ export default function Profile({
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordMessage(null);
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordMessage({ type: 'error', text: 'Todos os campos são obrigatórios' });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage({ type: 'error', text: 'As passwords novas não correspondem' });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordMessage({ type: 'error', text: 'A nova password deve ter pelo menos 6 caracteres' });
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      if (res.ok) {
+        setPasswordMessage({ type: 'success', text: 'Password alterada com sucesso!' });
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setShowPasswordForm(false);
+      } else {
+        const data = await res.json();
+        setPasswordMessage({ type: 'error', text: data.error || 'Erro ao alterar password' });
+      }
+    } catch {
+      setPasswordMessage({ type: 'error', text: 'Erro de conexão' });
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -133,6 +186,65 @@ export default function Profile({
           {saving && <Loader2 className="w-5 h-5 animate-spin" />}
           {saved ? 'Guardado ✓' : 'Guardar alterações'}
         </button>
+
+        {/* Mudar password */}
+        <div className="border-t border-emerald-800/50 pt-5">
+          <button
+            onClick={() => setShowPasswordForm(!showPasswordForm)}
+            className="w-full py-3 font-bold text-amber-400 uppercase text-sm rounded-2xl border border-amber-400/30 active:bg-amber-400/10"
+          >
+            {showPasswordForm ? 'Cancelar' : '🔐 Alterar password'}
+          </button>
+
+          {showPasswordForm && (
+            <div className="mt-4 space-y-3">
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Password atual"
+                disabled={passwordLoading}
+                className="w-full px-4 py-2.5 text-emerald-950 bg-emerald-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Nova password"
+                disabled={passwordLoading}
+                className="w-full px-4 py-2.5 text-emerald-950 bg-emerald-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirmar password"
+                disabled={passwordLoading}
+                className="w-full px-4 py-2.5 text-emerald-950 bg-emerald-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+
+              {passwordMessage && (
+                <div
+                  className={`px-3 py-2 rounded-lg text-xs font-bold ${
+                    passwordMessage.type === 'success'
+                      ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-200'
+                      : 'bg-red-500/20 border border-red-500/40 text-red-200'
+                  }`}
+                >
+                  {passwordMessage.text}
+                </div>
+              )}
+
+              <button
+                onClick={handleChangePassword}
+                disabled={passwordLoading}
+                className="w-full py-2.5 rounded-xl bg-amber-400 text-emerald-950 font-bold text-sm uppercase disabled:opacity-50"
+              >
+                {passwordLoading ? 'A alterar…' : 'Alterar password'}
+              </button>
+            </div>
+          )}
+        </div>
 
         <button
           onClick={logout}
