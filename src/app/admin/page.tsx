@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Shield, Loader2, Ban, Undo2, Flag, Check } from 'lucide-react';
+import { Shield, Loader2, Ban, Undo2, Flag, Check, Trash2 } from 'lucide-react';
 import { getToken, getIdentity } from '@/lib/identity';
 import { cn } from '@/lib/cn';
 
@@ -97,6 +97,26 @@ export default function AdminPage() {
       } else {
         const data = await res.json();
         alert(data.error || 'Erro');
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteUser = async (u: AdminUser) => {
+    if (!token) return;
+    if (!confirm(`Eliminar conta de ${u.username}? Esta ação é irreversível!`)) return;
+    setBusy(u.id);
+    try {
+      const res = await fetch(`/api/admin/users/${u.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setUsers((prev) => prev.filter((x) => x.id !== u.id));
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao eliminar');
       }
     } finally {
       setBusy(null);
@@ -503,6 +523,17 @@ export default function AdminPage() {
                         Banir
                       </>
                     )}
+                  </button>
+                )}
+                {u.role !== 'ADMIN' && (
+                  <button
+                    onClick={() => deleteUser(u)}
+                    disabled={busy === u.id}
+                    title="Eliminar conta"
+                    className="px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50 bg-red-900/40 text-red-300 border border-red-900/50 hover:bg-red-900/60"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 inline mr-1" />
+                    Eliminar
                   </button>
                 )}
               </div>
