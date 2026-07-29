@@ -6,7 +6,7 @@ import PlaylistForm from '@/components/PlaylistForm';
 import PlaylistPlayer from '@/components/PlaylistPlayer';
 import AddMusicButton from '@/components/AddMusicButton';
 import MusicList from '@/components/MusicList';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Play } from 'lucide-react';
 import Link from 'next/link';
 import { getIdentity, type Identity } from '@/lib/identity';
 
@@ -18,6 +18,7 @@ const MAX_MUSICAS = 10;
 export default function PlaylistsPage() {
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
 
   useEffect(() => {
@@ -75,8 +76,22 @@ export default function PlaylistsPage() {
           />
         </div>
 
+        {/* Botão de tocar: o player é um painel por cima, por isso só abre
+            quando é pedido — senão tapava a lista e o botão de remover. */}
         {selectedPlaylist.musics.length > 0 && (
-          <PlaylistPlayer playlist={selectedPlaylist} onClose={() => setSelectedPlaylist(null)} />
+          <div className="px-5 pb-6">
+            <button
+              onClick={() => setPlaying(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-400 text-emerald-950 font-bold text-sm uppercase active:scale-95"
+            >
+              <Play className="w-4 h-4" />
+              Tocar playlist
+            </button>
+          </div>
+        )}
+
+        {playing && (
+          <PlaylistPlayer playlist={selectedPlaylist} onClose={() => setPlaying(false)} />
         )}
       </div>
     );
