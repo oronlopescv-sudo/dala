@@ -51,7 +51,7 @@ export async function DELETE(
       orderBy: { order: 'asc' },
     });
     await Promise.all(
-      restantes.map((m, i) =>
+      restantes.map((m: { id: string; order: number }, i: number) =>
         m.order === i
           ? Promise.resolve(null)
           : prisma.music.update({ where: { id: m.id }, data: { order: i } })
