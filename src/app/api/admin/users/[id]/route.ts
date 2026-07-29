@@ -36,10 +36,17 @@ export async function DELETE(
       return NextResponse.json({ error: 'Utilizador não encontrado' }, { status: 404 });
     }
 
-    // Eliminar o utilizador
+    // Eliminar em cascata: mensagens, amizades, denúncias, depois o utilizador
+    await prisma.message.deleteMany({ where: { userId: id } });
+    await prisma.friendship.deleteMany({
+      where: { OR: [{ aId: id }, { bId: id }] },
+    });
+    await prisma.report.deleteMany({
+      where: { OR: [{ reporterId: id }, { reportedId: id }] },
+    });
     await prisma.user.delete({ where: { id } });
 
-    return NextResponse.json({ message: `Utilizador ${user.email} eliminado` });
+    return NextResponse.json({ message: `Utilizador ${user.email} e todos os seus dados eliminados` });
   } catch (error) {
     console.error('DELETE /api/admin/users/:id failed', error);
     return NextResponse.json({ error: 'Erro ao eliminar utilizador' }, { status: 500 });
