@@ -29,7 +29,7 @@ interface AdminChannel {
   id: number;
   name: string;
   description: string | null;
-  type: 'PUBLIC' | 'PRIVATE' | 'THEME';
+  type: 'PUBLIC' | 'PRIVATE' | 'THEME' | 'RADIO';
   accessCode?: string | null;
   expiresAt?: string | null;
 }

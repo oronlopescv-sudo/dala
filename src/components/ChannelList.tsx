@@ -11,7 +11,7 @@ export interface ChannelDTO {
   id: number;
   name: string;
   description: string | null;
-  type: 'PUBLIC' | 'PRIVATE' | 'THEME';
+  type: 'PUBLIC' | 'PRIVATE' | 'THEME' | 'RADIO';
   mode?: 'FREE' | 'MODERATED';
   accessCode?: string | null;
   hasAccessCode?: boolean;
@@ -21,6 +21,7 @@ export interface ChannelDTO {
 }
 
 function ChannelIcon({ type }: { type: ChannelDTO['type'] }) {
+  if (type === 'RADIO') return <Radio className="w-5 h-5" />;
   if (type === 'PRIVATE') return <Lock className="w-5 h-5" />;
   if (type === 'THEME') return <Music className="w-5 h-5" />;
   return <Hash className="w-5 h-5" />;
@@ -88,9 +89,17 @@ export default function ChannelList({
   }, [channels, query]);
 
   const popular = useMemo(
-    () => [...channels].sort((a, b) => (b._count?.messages ?? 0) - (a._count?.messages ?? 0)).slice(0, 3),
+    () =>
+      [...channels]
+        .filter((c) => c.type !== 'RADIO')
+        .sort((a, b) => (b._count?.messages ?? 0) - (a._count?.messages ?? 0))
+        .slice(0, 3),
     [channels]
   );
+
+  // As rádios têm secção própria — saem da lista geral para não aparecerem duas vezes
+  const radios = useMemo(() => filtered.filter((c) => c.type === 'RADIO'), [filtered]);
+  const nonRadios = useMemo(() => filtered.filter((c) => c.type !== 'RADIO'), [filtered]);
 
   return (
     <div className="flex flex-col h-full w-full max-w-md mx-auto">
@@ -162,12 +171,30 @@ export default function ChannelList({
               </section>
             )}
 
+            {radios.length > 0 && (
+              <section className="mb-5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-2">
+                  📻 Rádios
+                </h2>
+                <div className="flex flex-col gap-2">
+                  {radios.map((c) => (
+                    <ChannelRow
+                      key={`radio-${c.id}`}
+                      channel={c}
+                      onlineCount={online[String(c.id)] ?? 0}
+                      onClick={() => onOpenChannel(c)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section>
               <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-2">
                 {query ? 'Resultados' : 'Todos os canais'}
               </h2>
               <div className="flex flex-col gap-2">
-                {filtered.map((c) => (
+                {nonRadios.map((c) => (
                   <ChannelRow key={c.id} channel={c} onlineCount={online[String(c.id)] ?? 0} onClick={() => onOpenChannel(c)} />
                 ))}
                 {filtered.length === 0 && (
@@ -314,6 +341,7 @@ function CreateChannelModal({
     { value: 'PUBLIC', label: 'Público' },
     { value: 'THEME', label: 'Tema' },
     { value: 'PRIVATE', label: 'Privado' },
+    { value: 'RADIO', label: '📻 Rádio' },
   ];
 
   // Se gerou código, mostrar tela de confirmação

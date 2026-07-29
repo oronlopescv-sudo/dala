@@ -91,6 +91,8 @@ app.prepare().then(async () => {
   const channelSpeakers = new Map<string, Set<string>>(); // channelIdStr -> Set<socketId>
   // Presença: membros online por canal
   const channelMembers = new Map<string, Map<string, Member>>(); // channelIdStr -> socketId -> Member
+  // Rádio: convidados que o dono autorizou a falar
+  const radioGuests = new Map<string, Set<string>>(); // channelIdStr -> Set<socketId>
 
   // ---- Rate Limiting ----
   // Rate limit: 10 mensagens por minuto por utilizador (socket.io)
@@ -183,6 +185,9 @@ app.prepare().then(async () => {
         const channelIdStr = channel.id.toString();
         socket.data.channelId = channel.id;
         socket.data.channelIdStr = channelIdStr;
+        // Numa rádio só o dono (e quem ele convidar) transmite
+        socket.data.channelType = channel.type;
+        socket.data.isChannelOwner = !!channel.creatorId && channel.creatorId === userId;
         socket.join(channelIdStr);
 
         const member: Member = {
@@ -277,10 +282,44 @@ app.prepare().then(async () => {
       socket.emit('private_message', message); // eco para quem enviou
     });
 
+    // ---- Rádio: o apresentador convida alguém para falar com ele ----
+    socket.on('radio_invite', (payload: { socketId: string; allow: boolean }) => {
+      const { channelIdStr, channelType, isChannelOwner } = socket.data;
+      if (!channelIdStr || channelType !== 'RADIO' || !isChannelOwner) return;
+      if (!payload?.socketId) return;
+
+      if (!radioGuests.has(channelIdStr)) radioGuests.set(channelIdStr, new Set());
+      const guests = radioGuests.get(channelIdStr)!;
+
+      if (payload.allow) {
+        guests.add(payload.socketId);
+        io.to(payload.socketId).emit('radio_invited', { canSpeak: true });
+      } else {
+        guests.delete(payload.socketId);
+        io.to(payload.socketId).emit('radio_invited', { canSpeak: false });
+        // Se estava a falar, tira-lhe a palavra
+        if (channelSpeakers.get(channelIdStr)?.delete(payload.socketId)) {
+          io.to(channelIdStr).emit('speaker_ended', { userId: payload.socketId });
+        }
+      }
+      io.to(channelIdStr).emit('radio_guests', { guests: Array.from(guests) });
+    });
+
     // ---- Voz PTT (vários oradores em simultâneo) ----
     socket.on('request_speak', () => {
-      const { channelIdStr, userName } = socket.data;
+      const { channelIdStr, userName, channelType, isChannelOwner } = socket.data;
       if (!channelIdStr) return;
+
+      // Numa rádio a palavra é do dono; os outros só falam se ele convidar
+      if (channelType === 'RADIO' && !isChannelOwner) {
+        const invited = radioGuests.get(channelIdStr);
+        if (!invited?.has(socket.id)) {
+          socket.emit('speak_denied', {
+            message: 'Nesta rádio só o apresentador transmite.',
+          });
+          return;
+        }
+      }
 
       if (!channelSpeakers.has(channelIdStr)) channelSpeakers.set(channelIdStr, new Set());
       channelSpeakers.get(channelIdStr)!.add(socket.id);
@@ -331,6 +370,8 @@ app.prepare().then(async () => {
       console.log(`> Client disconnected: ${socket.id}`);
       if (channelIdStr) {
         removeFromChannel(socket.id, channelIdStr);
+        // Sem isto os convidados da rádio acumulavam-se para sempre
+        radioGuests.get(channelIdStr)?.delete(socket.id);
         io.to(channelIdStr).emit('user_left', { socketId: socket.id });
       }
     });

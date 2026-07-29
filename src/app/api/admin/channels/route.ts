@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'channelId é obrigatório' }, { status: 400 });
     }
 
-    const data: { name?: string; description?: string | null; type?: 'PUBLIC' | 'PRIVATE' | 'THEME' } = {};
+    const data: { name?: string; description?: string | null; type?: 'PUBLIC' | 'PRIVATE' | 'THEME' | 'RADIO' } = {};
     if (name?.trim()) data.name = name.trim();
     if (description !== undefined) data.description = description?.trim() || null;
     if (['PUBLIC', 'PRIVATE', 'THEME'].includes(type)) data.type = type;

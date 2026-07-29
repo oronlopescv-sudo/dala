@@ -94,7 +94,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nome do canal é obrigatório' }, { status: 400 });
     }
 
-    const type: ChannelType = ['PUBLIC', 'PRIVATE', 'THEME'].includes(body.type)
+    const type: ChannelType = ['PUBLIC', 'PRIVATE', 'THEME', 'RADIO'].includes(body.type)
       ? body.type
       : 'PUBLIC';
 

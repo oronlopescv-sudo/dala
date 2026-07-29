@@ -87,6 +87,12 @@ export default function ChannelRoom({
   const radioFileRef = useRef<HTMLInputElement>(null);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
 
+  // Rádio: só o apresentador e os convidados transmitem
+  const isRadio = channel.type === 'RADIO';
+  const [isRadioGuest, setIsRadioGuest] = useState(false);
+  const [radioGuests, setRadioGuests] = useState<Set<string>>(new Set());
+  const canBroadcast = !isRadio || isCreator || isRadioGuest;
+
   // Conversa privada 1-para-1 com um membro do canal
   const [privateChat, setPrivateChat] = useState<Member | null>(null);
   const [privateMessages, setPrivateMessages] = useState<PrivateMessage[]>([]);
@@ -478,6 +484,23 @@ export default function ChannelRoom({
         }
       });
 
+      // Rádio: o servidor recusou dar-me a palavra
+      socket.on('speak_denied', ({ message }: { message: string }) => {
+        setMicError(message);
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+      });
+
+      // Rádio: o apresentador convidou-me (ou retirou o convite)
+      socket.on('radio_invited', ({ canSpeak }: { canSpeak: boolean }) => {
+        setIsRadioGuest(canSpeak);
+        if (canSpeak) setMicError(null);
+      });
+
+      socket.on('radio_guests', ({ guests }: { guests: string[] }) => {
+        setRadioGuests(new Set(guests));
+      });
+
       socket.on('new_message', (msg: ChatMessage) => setMessages((prev) => [...prev, msg]));
 
       socket.on('private_message', (msg: PrivateMessage) => {
@@ -545,6 +568,7 @@ export default function ChannelRoom({
     // Sem microfone não há áudio para enviar: mostrar "estás a falar" seria
     // enganador, porque ninguém ouviria nada.
     if (!streamRef.current) return;
+    if (!canBroadcast) return; // rádio: só o apresentador e convidados
     if (navigator.vibrate) navigator.vibrate(50);
     if (audioContextRef.current?.state === 'suspended') audioContextRef.current.resume();
     playPttStart();
@@ -569,6 +593,7 @@ export default function ChannelRoom({
   const toggleHandsFree = () => {
     // Sem microfone o viva voz não teria nada para transmitir
     if (!streamRef.current) return;
+    if (!canBroadcast) return; // rádio: só o apresentador e convidados
     if (navigator.vibrate) navigator.vibrate(50);
     if (handsFreeRef.current) {
       // Desligar
@@ -896,11 +921,11 @@ export default function ChannelRoom({
               onMouseDown={handlePttStart}
               onMouseUp={handlePttEnd}
               onMouseLeave={handlePttEnd}
-              disabled={!!micError}
+              disabled={!!micError || !canBroadcast}
               className={cn(
                 'relative z-10 flex items-center justify-center w-60 h-60 rounded-full shadow-2xl transition-all duration-100 select-none',
-                micError
-                  ? 'bg-emerald-800/50 cursor-not-allowed' // sem microfone não dá para falar
+                micError || !canBroadcast
+                  ? 'bg-emerald-800/50 cursor-not-allowed' // sem microfone ou só ouvinte
                   : isSpeaking
                     ? 'bg-lime-500 scale-95'
                     : 'bg-amber-400 active:scale-95 shadow-[0_20px_40px_rgba(0,0,0,0.3)]',
@@ -919,14 +944,17 @@ export default function ChannelRoom({
           <p className="mt-10 text-emerald-400/60 uppercase tracking-widest text-sm">
             {micError
               ? 'Sem microfone — usa o chat'
-              : handsFree
-                ? 'Viva voz ligado — mic aberto'
-                : 'Segura para falar'}
+              : !canBroadcast
+                ? '📻 A ouvir — só o apresentador fala'
+                : handsFree
+                  ? 'Viva voz ligado — mic aberto'
+                  : 'Segura para falar'}
           </p>
 
-          {/* Botão viva voz (mãos livres) */}
+          {/* Botão viva voz (mãos livres) — quem só ouve não precisa dele */}
           <button
             onClick={toggleHandsFree}
+            hidden={!canBroadcast}
             className={cn(
               'mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold uppercase tracking-wide border transition-colors',
               handsFree
@@ -939,7 +967,7 @@ export default function ChannelRoom({
           </button>
 
           {/* Rádio: transmite uma música do meu telemóvel para o canal */}
-          {!micError && (
+          {!micError && canBroadcast && (
             <>
               <input
                 ref={radioFileRef}
@@ -1205,6 +1233,24 @@ export default function ChannelRoom({
             )}
 
             <div className="flex flex-col gap-2">
+              {isRadio && isCreator && (
+                <button
+                  onClick={() => {
+                    const m = selectedMember;
+                    const already = radioGuests.has(m.socketId);
+                    socketRef.current?.emit('radio_invite', {
+                      socketId: m.socketId,
+                      allow: !already,
+                    });
+                    setSelectedMember(null);
+                  }}
+                  className="w-full py-3 rounded-xl bg-amber-400 text-emerald-950 font-semibold text-sm"
+                >
+                  {radioGuests.has(selectedMember.socketId)
+                    ? '🔇 Retirar do ar'
+                    : '🎙️ Convidar para falar'}
+                </button>
+              )}
               <button
                 onClick={() => {
                   const m = selectedMember;

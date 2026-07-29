@@ -11,6 +11,7 @@ enum ChannelType {
   PUBLIC
   PRIVATE
   THEME
+  RADIO       // Só o dono (e quem ele convida) transmite; os outros ouvem
 }
 
 enum ChannelMode {
