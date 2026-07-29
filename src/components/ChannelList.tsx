@@ -202,6 +202,14 @@ export default function ChannelList({
                 )}
               </div>
             </section>
+
+            {/* Autoria — fica no fim da lista para não tapar o botão de criar */}
+            <footer className="pt-8 pb-24 text-center">
+              <p className="text-[11px] tracking-wide text-emerald-600">
+                TECHNOHUB · ORSON LOPES
+              </p>
+              <p className="text-[10px] text-emerald-700 mt-0.5">Cabo Verde</p>
+            </footer>
           </>
         )}
       </div>
