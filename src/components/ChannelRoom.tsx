@@ -199,6 +199,10 @@ export default function ChannelRoom({
           ? ctxCompat.createJavaScriptNode.bind(ctx)
           : null;
     if (!createProcessor) {
+      // Desfaz a mistura já criada — senão ficava um mixer órfão sem
+      // processador, e a limpeza nunca lhe tocaria.
+      mixer.disconnect();
+      mixerRef.current = null;
       setMicError('Este navegador não suporta captura de voz. Experimenta Chrome, Safari ou Firefox atualizados.');
       return;
     }
@@ -296,7 +300,13 @@ export default function ChannelRoom({
       // Ouço a música no meu aparelho...
       src.connect(ctx.destination);
       // ...e ela entra na mistura que vai para o canal
-      if (mixerRef.current) src.connect(mixerRef.current);
+      if (mixerRef.current) {
+        src.connect(mixerRef.current);
+      } else {
+        // Sem mistura a música tocaria só aqui e ninguém no canal ouviria —
+        // mais vale dizê-lo do que deixar transmitir em silêncio.
+        setMicError('Não foi possível transmitir a música para o canal.');
+      }
 
       el.onended = () => stopRadio();
 
