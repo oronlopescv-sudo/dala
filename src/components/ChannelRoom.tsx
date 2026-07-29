@@ -39,6 +39,10 @@ interface FloatingReaction {
 
 type Tab = 'voice' | 'chat';
 
+// Volume da música enquanto o apresentador fala (como numa rádio a sério)
+const DUCK_VOLUME = 0.15;
+const DUCK_FADE_S = 0.25; // transição suave, sem cortes bruscos
+
 interface PrivateMessage {
   id: string;
   content: string;
@@ -140,6 +144,7 @@ export default function ChannelRoom({
   const mixerRef = useRef<GainNode | null>(null);
   const musicSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const musicElRef = useRef<HTMLAudioElement | null>(null);
+  const musicGainRef = useRef<GainNode | null>(null);
   const radioOnRef = useRef(false);
   const nextStartTimeRef = useRef(0);
   const isSpeakingRef = useRef(false);
@@ -263,6 +268,19 @@ export default function ChannelRoom({
     }
   }, [channel.name]);
 
+  // Baixa a música enquanto falo e volta a subir quando calo.
+  // Só mexe no volume — a faixa continua a correr de onde ia.
+  const duckMusic = useCallback((aFalar: boolean) => {
+    const gain = musicGainRef.current;
+    const ctx = audioContextRef.current;
+    if (!gain || !ctx) return;
+    const alvo = aFalar ? DUCK_VOLUME : 1;
+    const agora = ctx.currentTime;
+    gain.gain.cancelScheduledValues(agora);
+    gain.gain.setValueAtTime(gain.gain.value, agora);
+    gain.gain.linearRampToValueAtTime(alvo, agora + DUCK_FADE_S);
+  }, []);
+
   const stopRadio = useCallback(() => {
     const el = musicElRef.current;
     if (el) {
@@ -271,7 +289,9 @@ export default function ChannelRoom({
       el.onended = null;
     }
     musicSourceRef.current?.disconnect();
+    musicGainRef.current?.disconnect();
     musicSourceRef.current = null;
+    musicGainRef.current = null;
     musicElRef.current = null;
     if (radioOnRef.current) {
       radioOnRef.current = false;
@@ -303,11 +323,18 @@ export default function ChannelRoom({
       const src = ctx.createMediaElementSource(el);
       musicSourceRef.current = src;
 
+      // Ganho da música: baixa enquanto eu falo e volta a subir quando calo.
+      // A faixa nunca pára — continua exatamente de onde ia.
+      const musicGain = ctx.createGain();
+      musicGain.gain.value = isSpeakingRef.current ? DUCK_VOLUME : 1;
+      musicGainRef.current = musicGain;
+      src.connect(musicGain);
+
       // Ouço a música no meu aparelho...
-      src.connect(ctx.destination);
+      musicGain.connect(ctx.destination);
       // ...e ela entra na mistura que vai para o canal
       if (mixerRef.current) {
-        src.connect(mixerRef.current);
+        musicGain.connect(mixerRef.current);
       } else {
         // Sem mistura a música tocaria só aqui e ninguém no canal ouviria —
         // mais vale dizê-lo do que deixar transmitir em silêncio.
@@ -444,9 +471,13 @@ export default function ChannelRoom({
         isSpeakingRef.current = true;
         setIsSpeaking(true);
         startRecording();
+        duckMusic(true); // baixa a música enquanto falo
       });
-      socket.on('speak_denied', () => {
+      socket.on('speak_denied', ({ message }: { message?: string } = {}) => {
+        isSpeakingRef.current = false;
         setIsSpeaking(false);
+        duckMusic(false); // não estou a falar: música volta ao normal
+        if (message) setMicError(message); // rádio: só o apresentador fala
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       });
 
@@ -485,12 +516,6 @@ export default function ChannelRoom({
       });
 
       // Rádio: o servidor recusou dar-me a palavra
-      socket.on('speak_denied', ({ message }: { message: string }) => {
-        setMicError(message);
-        isSpeakingRef.current = false;
-        setIsSpeaking(false);
-      });
-
       // Rádio: o apresentador convidou-me (ou retirou o convite)
       socket.on('radio_invited', ({ canSpeak }: { canSpeak: boolean }) => {
         setIsRadioGuest(canSpeak);
@@ -530,7 +555,9 @@ export default function ChannelRoom({
         el.onended = null;
       }
       musicSourceRef.current?.disconnect();
+      musicGainRef.current?.disconnect();
       musicSourceRef.current = null;
+      musicGainRef.current = null;
       musicElRef.current = null;
       radioOnRef.current = false;
 
@@ -584,6 +611,7 @@ export default function ChannelRoom({
       setIsSpeaking(false);
       stopRecording();
       playPttEnd();
+      duckMusic(false); // calei-me: música volta ao volume normal
       // Com a rádio a tocar mantenho a palavra: a música continua a sair.
       if (!radioOnRef.current) socketRef.current?.emit('release_speak');
     }
@@ -603,6 +631,7 @@ export default function ChannelRoom({
         isSpeakingRef.current = false;
         setIsSpeaking(false);
         stopRecording();
+        duckMusic(false); // mic fechado: música volta ao normal
         socketRef.current?.emit('release_speak');
       }
     } else {
