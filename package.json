@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "NEXT_TELEMETRY_DISABLED=1 tsx server.ts",
     "build": "prisma generate && next build",
-    "start": "NODE_ENV=production sh -c 'npx prisma db push --accept-data-loss || echo db-push-failed; npx tsx scripts/migrate-channel-fields.ts || true; tsx server.ts'",
+    "start": "NODE_ENV=production sh -c 'npx prisma db push --accept-data-loss || echo db-push-failed; npx tsx scripts/migrate-channel-fields.ts || true; npx tsx scripts/migrate-playlists.ts || true; tsx server.ts'",
     "cleanup:channels": "tsx scripts/cleanup-channels.ts",
     "postinstall": "prisma generate",
     "lint": "eslint"

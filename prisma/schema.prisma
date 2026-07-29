@@ -44,12 +44,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  createdChannels Channel[]    @relation("ChannelCreator")
-  messages        Message[]
-  friendsInitiated Friendship[] @relation("FriendA")
-  friendsReceived  Friendship[] @relation("FriendB")
-  mutedByMe       Mute[]        @relation("Muter")
-  mutedMe         Mute[]        @relation("Muted")
+  createdChannels  Channel[]           @relation("ChannelCreator")
+  createdPlaylists Playlist[]          @relation("PlaylistCreator")
+  playlistsJoined  PlaylistListener[]
+  messages         Message[]
+  friendsInitiated Friendship[]        @relation("FriendA")
+  friendsReceived  Friendship[]        @relation("FriendB")
+  mutedByMe        Mute[]              @relation("Muter")
+  mutedMe          Mute[]              @relation("Muted")
 }
 
 model Channel {
@@ -124,4 +126,47 @@ model Report {
   reason       String
   resolved     Boolean  @default(false)
   createdAt    DateTime @default(now())
+}
+
+model Playlist {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creatorId String
+  creator   User   @relation("PlaylistCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  musics Music[]
+  listeners PlaylistListener[]
+
+  @@unique([creatorId, name])
+}
+
+model Music {
+  id        String   @id @default(cuid())
+  title     String
+  artist    String?
+  duration  Int      // em segundos
+  fileUrl   String   // caminho ou URL do ficheiro de áudio
+  order     Int      // ordem na playlist
+  createdAt DateTime @default(now())
+
+  playlistId String
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+
+  @@index([playlistId])
+}
+
+model PlaylistListener {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playlistId String
+  playlist  Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@unique([userId, playlistId])
 }
