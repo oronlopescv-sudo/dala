@@ -3,18 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Music, Plus, Lock, Globe } from 'lucide-react';
 import { getToken } from '@/lib/identity';
-import { cn } from '@/lib/cn';
-
-interface Playlist {
-  id: string;
-  name: string;
-  description?: string;
-  isPublic: boolean;
-  creator: { id: string; username: string; photoUrl?: string };
-  musics: Array<{ id: string; title: string; artist?: string; duration: number }>;
-  _count: { listeners: number };
-  createdAt: string;
-}
+import type { Playlist } from '@/types/playlist';
 
 export default function PlaylistList({
   onSelectPlaylist,

@@ -3,20 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, X } from 'lucide-react';
 
-interface Music {
-  id: string;
-  title: string;
-  artist?: string;
-  duration: number;
-  fileUrl: string;
-}
-
-interface Playlist {
-  id: string;
-  name: string;
-  creator: { username: string };
-  musics: Music[];
-}
+import type { Playlist } from '@/types/playlist';
 
 export default function PlaylistPlayer({
   playlist,
@@ -32,7 +19,7 @@ export default function PlaylistPlayer({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
 
-  const currentMusic = playlist.musics[currentIndex];
+  const currentMusic: Playlist['musics'][number] | undefined = playlist.musics[currentIndex];
 
   useEffect(() => {
     if (!audioRef.current) return;
@@ -94,6 +81,23 @@ export default function PlaylistPlayer({
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Playlist ainda sem músicas: não há nada para tocar
+  if (!currentMusic) {
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-end">
+        <div className="w-full bg-emerald-950 border-t border-emerald-800/50 p-6 rounded-t-3xl text-center">
+          <p className="text-emerald-300 mb-4">Esta playlist ainda não tem músicas.</p>
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-xl bg-amber-400 text-emerald-950 font-bold text-sm uppercase"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-end">

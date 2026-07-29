@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { getToken } from '@/lib/identity';
+import type { Playlist } from '@/types/playlist';
 
 export default function PlaylistForm({
   onCreated,
   onCancel,
 }: {
-  onCreated: (playlist: any) => void;
+  onCreated: (playlist: Playlist) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState('');

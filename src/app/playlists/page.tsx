@@ -7,16 +7,7 @@ import PlaylistPlayer from '@/components/PlaylistPlayer';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
-interface Playlist {
-  id: string;
-  name: string;
-  description?: string;
-  isPublic: boolean;
-  creator: { id: string; username: string; photoUrl?: string };
-  musics: Array<{ id: string; title: string; artist?: string; duration: number; fileUrl: string }>;
-  _count: { listeners: number };
-  createdAt: string;
-}
+import type { Playlist } from '@/types/playlist';
 
 export default function PlaylistsPage() {
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
