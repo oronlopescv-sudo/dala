@@ -75,7 +75,9 @@ export async function POST(
         title: title.slice(0, 200),
         artist: artist ? artist.slice(0, 200) : null,
         duration,
-        fileUrl: `/uploads/music/${fileName}`,
+        // Servido por /api/music: o Next não serve ficheiros escritos
+        // em public/ depois do build.
+        fileUrl: `/api/music/${fileName}`,
         order: count,
         playlistId: id,
       },
