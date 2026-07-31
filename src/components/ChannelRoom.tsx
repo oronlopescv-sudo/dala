@@ -157,6 +157,9 @@ export default function ChannelRoom({
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   // Rádio: toco música do meu telemóvel e ela vai para o canal com a minha voz
   const mixerRef = useRef<GainNode | null>(null);
+  // Ganho do microfone na mistura: só abre quando falo, senão a rádio levaria
+  // o ruído de fundo e os artefactos do cancelamento de ruído por cima da música.
+  const micGainRef = useRef<GainNode | null>(null);
   const musicSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const musicElRef = useRef<HTMLAudioElement | null>(null);
   const musicGainRef = useRef<GainNode | null>(null);
@@ -204,7 +207,13 @@ export default function ChannelRoom({
     mixerRef.current = mixer;
 
     const micSource = ctx.createMediaStreamSource(streamRef.current);
-    micSource.connect(mixer);
+    // O mic passa por um ganho próprio: 1 enquanto falo, 0 caso contrário.
+    // Assim, com a rádio a tocar sem eu falar, só a música limpa é transmitida.
+    const micGain = ctx.createGain();
+    micGain.gain.value = isSpeakingRef.current || handsFreeRef.current ? 1 : 0;
+    micGainRef.current = micGain;
+    micSource.connect(micGain);
+    micGain.connect(mixer);
 
     // Se a rádio já estava a tocar, liga a música à mistura
     if (musicSourceRef.current) {
@@ -307,6 +316,19 @@ export default function ChannelRoom({
     gain.gain.cancelScheduledValues(agora);
     gain.gain.setValueAtTime(gain.gain.value, agora);
     gain.gain.linearRampToValueAtTime(alvo, agora + DUCK_FADE_S);
+  }, []);
+
+  // Abre/fecha o microfone na mistura conforme estou (ou não) a falar.
+  // Rampa curta para não estalar. Só faz sentido enquanto há captura ativa.
+  const updateMic = useCallback(() => {
+    const gain = micGainRef.current;
+    const ctx = audioContextRef.current;
+    if (!gain || !ctx) return;
+    const alvo = isSpeakingRef.current || handsFreeRef.current ? 1 : 0;
+    const agora = ctx.currentTime;
+    gain.gain.cancelScheduledValues(agora);
+    gain.gain.setValueAtTime(gain.gain.value, agora);
+    gain.gain.linearRampToValueAtTime(alvo, agora + 0.02);
   }, []);
 
   const stopRadio = useCallback(() => {
@@ -415,7 +437,13 @@ export default function ChannelRoom({
 
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioContextClass) {
-        audioContextRef.current = new AudioContextClass();
+        // 48 kHz fixo: taxa nativa da maioria dos dispositivos, evita reamostragem
+        // que degrada a música. Alguns webkit antigos não aceitam opções — daí o fallback.
+        try {
+          audioContextRef.current = new AudioContextClass({ sampleRate: 48000 });
+        } catch {
+          audioContextRef.current = new AudioContextClass();
+        }
         if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
       } else {
         setMicError('O teu navegador não suporta áudio. Podes usar o chat de texto.');
@@ -502,11 +530,13 @@ export default function ChannelRoom({
         setIsSpeaking(true);
         startRecording();
         duckMusic(true); // baixa a música enquanto falo
+        updateMic(); // abre o microfone na mistura
       });
       socket.on('speak_denied', ({ message }: { message?: string } = {}) => {
         isSpeakingRef.current = false;
         setIsSpeaking(false);
         duckMusic(false); // não estou a falar: música volta ao normal
+        updateMic(); // fecha o microfone na mistura
         if (message) setMicError(message); // rádio: só o apresentador fala
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       });
@@ -614,8 +644,10 @@ export default function ChannelRoom({
     if (radioOnRef.current) return;
     processorRef.current?.disconnect();
     sourceNodeRef.current?.disconnect();
+    micGainRef.current?.disconnect();
     processorRef.current = null;
     sourceNodeRef.current = null;
+    micGainRef.current = null;
     mixerRef.current = null;
   };
 
@@ -642,6 +674,7 @@ export default function ChannelRoom({
       stopRecording();
       playPttEnd();
       duckMusic(false); // calei-me: música volta ao volume normal
+      updateMic(); // fecha o microfone: com a rádio a tocar, fica só a música
       // Com a rádio a tocar mantenho a palavra: a música continua a sair.
       if (!radioOnRef.current) socketRef.current?.emit('release_speak');
     }
@@ -662,6 +695,7 @@ export default function ChannelRoom({
         setIsSpeaking(false);
         stopRecording();
         duckMusic(false); // mic fechado: música volta ao normal
+        updateMic(); // fecha o microfone na mistura
         socketRef.current?.emit('release_speak');
       }
     } else {
